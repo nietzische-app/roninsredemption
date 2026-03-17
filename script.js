@@ -1,8 +1,11 @@
 // ============================================================
-//  RONIN'S REDEMPTION — Full Combat + Sprite Enemies + Audio
+//  RONIN'S REDEMPTION — OOP Enemy System + 4 Enemy Types
 //  Player: samurai_sheet.jpg (4x3, 12 frames)
-//  Enemy:  enemy_sheet.jpg   (4x3, 12 frames)
-//  Audio:  CDN + Web Audio API
+//  Enemies: 4x4 grids (16 frames each)
+//    - Oni (enemy_sheet.jpg)
+//    - Archer (enemy__archer.jpg)
+//    - Shield (enemy_shield.jpg)
+//    - Assassin (enemy_assasin.jpg)
 // ============================================================
 
 const W = 1280, H = 720;
@@ -26,6 +29,7 @@ let coyoteTimer = 0, jumpBufferTimer = 0;
 
 // ===================== ENEMY STATE =====================
 let enemies = [];
+let projectiles = [];
 let playerHP = 100, playerMaxHP = 100;
 let playerHurtTimer = 0;
 const PLAYER_HURT_IFRAMES = 600;
@@ -34,14 +38,12 @@ const PLAYER_HURT_IFRAMES = 600;
 let audioCtx = null;
 let slashAudio = null, bgmAudio = null;
 
-// ===================== ENEMY FRAME DIMS (set dynamically) =====================
-let oniFW = 256, oniFH = 341;
-
 // ===================== HUD =====================
 let hpBarBg, hpBarFill, hpBarBorder, hpText;
 
-// ===================== SPRITE SHEET =====================
-const SHEET_COLS = 4, SHEET_ROWS = 3;
+// ===================== PLAYER SPRITE SHEET =====================
+const PLAYER_COLS = 4, PLAYER_ROWS = 3;
+const ENEMY_COLS = 4, ENEMY_ROWS = 4;
 
 const CHAR_SCALE = 0.32;
 const BODY_W = 100, BODY_H = 200, BODY_OX = 78, BODY_OY = 80;
@@ -62,134 +64,76 @@ const ATTACKS = [
     { name: '三 SWEEP',  dur:320, cd:100, hb:{ox:60,oy:10,w:80,h:50},  lunge:240, trail:{sa:-35,ea:55,r:62,w:8}, shake:0.007, dmg:35 }
 ];
 
-// ===================== ONI CONFIG =====================
-const ONI = {
-    hp: 100, speed: 120, chaseRange: 300, attackRange: 55,
-    attackDur: 500, attackCd: 1200, attackDmg: 15, knockback: 250,
-    scale: 0.28
-    // bodyW, bodyH, bodyOX, bodyOY are set dynamically from frame dimensions
-};
-
-const ONI_ANIMS = {
-    idle:   { frames: [0, 1, 2, 3], fps: 5, loop: true },
-    walk:   { frames: [4, 5, 6, 7], fps: 8, loop: true },
-    attack: { frames: [8, 9, 10, 11], fps: 10, loop: false }
-};
-
 // ============================================================
 //  AUDIO — CDN sounds + Web Audio fallback
 // ============================================================
 function initAudio() {
     try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {}
-    // CDN slash sound
     slashAudio = new Audio('https://actions.google.com/sounds/v1/science_fiction/swish_vroom.ogg');
-    slashAudio.volume = 0.4;
-    slashAudio.load();
-    // CDN BGM
+    slashAudio.volume = 0.4; slashAudio.load();
     bgmAudio = new Audio('https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3');
-    bgmAudio.volume = 0.12;
-    bgmAudio.loop = true;
-    bgmAudio.load();
+    bgmAudio.volume = 0.12; bgmAudio.loop = true; bgmAudio.load();
 }
-
 function playSlashSound() {
-    if (slashAudio) {
-        const s = slashAudio.cloneNode();
-        s.volume = 0.35 + Math.random() * 0.15;
-        s.play().catch(() => {});
-    }
+    if (slashAudio) { const s = slashAudio.cloneNode(); s.volume = 0.35 + Math.random() * 0.15; s.play().catch(() => {}); }
 }
-
 function playHitSound() {
-    if (!audioCtx) return;
-    const t = audioCtx.currentTime;
-    const osc = audioCtx.createOscillator();
-    osc.type = 'sine'; osc.frequency.setValueAtTime(150, t);
-    osc.frequency.exponentialRampToValueAtTime(40, t + 0.15);
-    const gain = audioCtx.createGain();
-    gain.gain.setValueAtTime(0.4, t);
-    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
-    osc.connect(gain).connect(audioCtx.destination);
-    osc.start(t); osc.stop(t + 0.15);
-    const dur = 0.06;
-    const buf = audioCtx.createBuffer(1, audioCtx.sampleRate * dur, audioCtx.sampleRate);
-    const data = buf.getChannelData(0);
-    for (let i = 0; i < data.length; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / data.length);
-    const ns = audioCtx.createBufferSource(); ns.buffer = buf;
-    const ng = audioCtx.createGain(); ng.gain.setValueAtTime(0.3, t); ng.gain.exponentialRampToValueAtTime(0.001, t + dur);
-    ns.connect(ng).connect(audioCtx.destination); ns.start(t); ns.stop(t + dur);
+    if (!audioCtx) return; const t = audioCtx.currentTime;
+    const osc = audioCtx.createOscillator(); osc.type = 'sine'; osc.frequency.setValueAtTime(150, t); osc.frequency.exponentialRampToValueAtTime(40, t + 0.15);
+    const gain = audioCtx.createGain(); gain.gain.setValueAtTime(0.4, t); gain.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
+    osc.connect(gain).connect(audioCtx.destination); osc.start(t); osc.stop(t + 0.15);
 }
-
 function playHurtSound() {
-    if (!audioCtx) return;
-    const t = audioCtx.currentTime;
-    const osc = audioCtx.createOscillator();
-    osc.type = 'sawtooth'; osc.frequency.setValueAtTime(400, t);
-    osc.frequency.exponentialRampToValueAtTime(100, t + 0.25);
-    const gain = audioCtx.createGain();
-    gain.gain.setValueAtTime(0.15, t);
-    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.25);
-    osc.connect(gain).connect(audioCtx.destination);
-    osc.start(t); osc.stop(t + 0.25);
+    if (!audioCtx) return; const t = audioCtx.currentTime;
+    const osc = audioCtx.createOscillator(); osc.type = 'sawtooth'; osc.frequency.setValueAtTime(400, t); osc.frequency.exponentialRampToValueAtTime(100, t + 0.25);
+    const gain = audioCtx.createGain(); gain.gain.setValueAtTime(0.15, t); gain.gain.exponentialRampToValueAtTime(0.001, t + 0.25);
+    osc.connect(gain).connect(audioCtx.destination); osc.start(t); osc.stop(t + 0.25);
 }
-
 function playDashSound() {
-    if (!audioCtx) return;
-    const t = audioCtx.currentTime;
-    const dur = 0.1;
-    const buf = audioCtx.createBuffer(1, audioCtx.sampleRate * dur, audioCtx.sampleRate);
-    const data = buf.getChannelData(0);
-    for (let i = 0; i < data.length; i++) {
-        const p = i / data.length;
-        data[i] = (Math.random() * 2 - 1) * Math.sin(p * Math.PI) * 0.8;
-    }
+    if (!audioCtx) return; const t = audioCtx.currentTime; const dur = 0.1;
+    const buf = audioCtx.createBuffer(1, audioCtx.sampleRate * dur, audioCtx.sampleRate); const data = buf.getChannelData(0);
+    for (let i = 0; i < data.length; i++) { data[i] = (Math.random() * 2 - 1) * Math.sin((i / data.length) * Math.PI) * 0.8; }
     const src = audioCtx.createBufferSource(); src.buffer = buf;
-    const bp = audioCtx.createBiquadFilter();
-    bp.type = 'bandpass'; bp.frequency.value = 1500; bp.Q.value = 0.5;
+    const bp = audioCtx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 1500; bp.Q.value = 0.5;
     const gain = audioCtx.createGain(); gain.gain.setValueAtTime(0.2, t);
-    src.connect(bp).connect(gain).connect(audioCtx.destination);
-    src.start(t); src.stop(t + dur);
+    src.connect(bp).connect(gain).connect(audioCtx.destination); src.start(t); src.stop(t + dur);
 }
-
+function playBlockSound() {
+    if (!audioCtx) return; const t = audioCtx.currentTime;
+    const osc = audioCtx.createOscillator(); osc.type = 'square'; osc.frequency.setValueAtTime(800, t); osc.frequency.exponentialRampToValueAtTime(200, t + 0.08);
+    const gain = audioCtx.createGain(); gain.gain.setValueAtTime(0.25, t); gain.gain.exponentialRampToValueAtTime(0.001, t + 0.1);
+    osc.connect(gain).connect(audioCtx.destination); osc.start(t); osc.stop(t + 0.1);
+}
+function playArrowSound() {
+    if (!audioCtx) return; const t = audioCtx.currentTime; const dur = 0.15;
+    const buf = audioCtx.createBuffer(1, audioCtx.sampleRate * dur, audioCtx.sampleRate); const data = buf.getChannelData(0);
+    for (let i = 0; i < data.length; i++) { const env = 1 - (i / data.length); data[i] = (Math.random() * 2 - 1) * env * 0.3; }
+    const src = audioCtx.createBufferSource(); src.buffer = buf;
+    const hp = audioCtx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 4000;
+    const gain = audioCtx.createGain(); gain.gain.setValueAtTime(0.2, t);
+    src.connect(hp).connect(gain).connect(audioCtx.destination); src.start(t); src.stop(t + dur);
+}
 let bgmStarted = false;
-function startBGM() {
-    if (bgmStarted || !bgmAudio) return;
-    bgmStarted = true;
-    bgmAudio.play().catch(() => { bgmStarted = false; });
-}
+function startBGM() { if (bgmStarted || !bgmAudio) return; bgmStarted = true; bgmAudio.play().catch(() => { bgmStarted = false; }); }
 
 // ============================================================
-//  SCENE
+//  SPRITE SHEET PROCESSING
 // ============================================================
-function preload() {
-    this.load.image('bg_castle', 'background.png');
-    this.load.image('samurai_raw', 'samurai_sheet.jpg');
-    this.load.image('enemy_raw', 'enemy_sheet.jpg');
-}
-
-// Process sprite sheet: chroma key + slice in one pass
-// Returns { fw, fh } — dynamic frame dimensions from actual image
-function processAndSliceSheet(scene, rawKey, prefix, keyColor, tol) {
+function processAndSliceSheet(scene, rawKey, prefix, keyColor, tol, cols, rows) {
     const src = scene.textures.get(rawKey).getSourceImage();
-    const fw = Math.floor(src.width / SHEET_COLS);   // dynamic from image width
-    const fh = Math.floor(src.height / SHEET_ROWS);  // dynamic from image height
-    for (let row = 0; row < SHEET_ROWS; row++) {
-        for (let col = 0; col < SHEET_COLS; col++) {
-            const idx = row * SHEET_COLS + col;
+    const fw = Math.floor(src.width / cols);
+    const fh = Math.floor(src.height / rows);
+    for (let row = 0; row < rows; row++) {
+        for (let col = 0; col < cols; col++) {
+            const idx = row * cols + col;
             const c = document.createElement('canvas');
             c.width = fw; c.height = fh;
             const ctx = c.getContext('2d');
-            // Extract exactly one frame — margin:0, spacing:0
             ctx.drawImage(src, col * fw, row * fh, fw, fh, 0, 0, fw, fh);
-            // Chroma key on this single frame
             const imgData = ctx.getImageData(0, 0, fw, fh);
             const d = imgData.data;
             for (let i = 0; i < d.length; i += 4) {
-                if (Math.abs(d[i] - keyColor.r) < tol &&
-                    Math.abs(d[i + 1] - keyColor.g) < tol &&
-                    Math.abs(d[i + 2] - keyColor.b) < tol) {
-                    d[i + 3] = 0;
-                }
+                if (Math.abs(d[i] - keyColor.r) < tol && Math.abs(d[i+1] - keyColor.g) < tol && Math.abs(d[i+2] - keyColor.b) < tol) d[i+3] = 0;
             }
             ctx.putImageData(imgData, 0, 0);
             scene.textures.addCanvas(prefix + idx, c);
@@ -198,32 +142,53 @@ function processAndSliceSheet(scene, rawKey, prefix, keyColor, tol) {
     return { fw, fh };
 }
 
+// ============================================================
+//  SCENE — PRELOAD / CREATE
+// ============================================================
+function preload() {
+    this.load.image('bg_castle', 'background.jpeg');
+    this.load.image('samurai_raw', 'samurai_sheet.jpg');
+    this.load.image('oni_raw', 'enemy_sheet.jpg');
+    this.load.image('archer_raw', 'enemy__archer.jpg');
+    this.load.image('shield_raw', 'enemy_shield.jpg');
+    this.load.image('assassin_raw', 'enemy_assasin.jpg');
+}
+
 function create() {
     gameScene = this;
 
-    // Process sprite sheets — dynamic frame dimensions from actual image size
-    processAndSliceSheet(this, 'samurai_raw', 'sam_f', { r: 0, g: 0, b: 0 }, 15);
-    const oniDims = processAndSliceSheet(this, 'enemy_raw', 'oni_f', { r: 8, g: 8, b: 8 }, 22);
-    oniFW = oniDims.fw;
-    oniFH = oniDims.fh;
+    // --- Process player sheet (4x3) ---
+    processAndSliceSheet(this, 'samurai_raw', 'sam_f', { r: 0, g: 0, b: 0 }, 15, PLAYER_COLS, PLAYER_ROWS);
+
+    // --- Process enemy sheets (4x4 each) ---
+    const oniDims = processAndSliceSheet(this, 'oni_raw', 'oni_f', { r: 8, g: 8, b: 8 }, 22, ENEMY_COLS, ENEMY_ROWS);
+    const archerDims = processAndSliceSheet(this, 'archer_raw', 'archer_f', { r: 0, g: 0, b: 0 }, 20, ENEMY_COLS, ENEMY_ROWS);
+    const shieldDims = processAndSliceSheet(this, 'shield_raw', 'shield_f', { r: 0, g: 0, b: 0 }, 20, ENEMY_COLS, ENEMY_ROWS);
+    const assassinDims = processAndSliceSheet(this, 'assassin_raw', 'assassin_f', { r: 0, g: 0, b: 0 }, 20, ENEMY_COLS, ENEMY_ROWS);
+
+    // Store dims on config
+    EnemyOni.dims = oniDims;
+    EnemyArcher.dims = archerDims;
+    EnemyShield.dims = shieldDims;
+    EnemyAssassin.dims = assassinDims;
 
     // --- BACKGROUND ---
     drawBackground(this);
 
-    // --- PLATFORMS (semi-transparent, visible) ---
+    // --- PLATFORMS (semi-transparent, alpha 0.5) ---
     platforms = this.physics.add.staticGroup();
     makePlatform(this, 640, 694, 1280, 32, 'ground');
-    makePlatform(this, 200, 560, 180, 12, 'wood');
-    makePlatform(this, 500, 480, 200, 12, 'wood');
-    makePlatform(this, 820, 530, 160, 12, 'wood');
-    makePlatform(this, 1060, 440, 200, 12, 'wood');
-    makePlatform(this, 360, 350, 160, 12, 'wood');
-    makePlatform(this, 700, 290, 220, 12, 'wood');
-    makePlatform(this, 1010, 240, 180, 12, 'wood');
-    makePlatform(this, 200, 200, 140, 12, 'wood');
-    makePlatform(this, 560, 150, 160, 12, 'wood');
+    makePlatform(this, 200, 560, 180, 14, 'wood');
+    makePlatform(this, 500, 480, 200, 14, 'wood');
+    makePlatform(this, 820, 530, 160, 14, 'wood');
+    makePlatform(this, 1060, 440, 200, 14, 'wood');
+    makePlatform(this, 360, 350, 160, 14, 'wood');
+    makePlatform(this, 700, 290, 220, 14, 'wood');
+    makePlatform(this, 1010, 240, 180, 14, 'wood');
+    makePlatform(this, 200, 200, 140, 14, 'wood');
+    makePlatform(this, 560, 150, 160, 14, 'wood');
 
-    // --- WALLS (slightly visible edges) ---
+    // --- WALLS ---
     walls = this.physics.add.staticGroup();
     makeWall(this, 16, 360, 24, 720);
     makeWall(this, 1264, 360, 24, 720);
@@ -234,27 +199,26 @@ function create() {
     player.setScale(CHAR_SCALE).setBounce(0).setCollideWorldBounds(true).setDepth(10);
     player.body.setSize(BODY_W, BODY_H).setOffset(BODY_OX, BODY_OY);
     player.body.setMaxVelocityY(900);
-    player.animFrame = 0;
-    player.animTimer = 0;
-    player.currentAnim = 'idle';
+    player.animFrame = 0; player.animTimer = 0; player.currentAnim = 'idle';
 
     // --- PLAYER GLOW ---
-    const gc = document.createElement('canvas');
-    gc.width = 300; gc.height = 300;
+    const gc = document.createElement('canvas'); gc.width = 300; gc.height = 300;
     const gctx = gc.getContext('2d');
     const grad = gctx.createRadialGradient(150, 150, 0, 150, 150, 150);
-    grad.addColorStop(0, 'rgba(110,150,240,0.35)');
-    grad.addColorStop(0.2, 'rgba(90,120,220,0.2)');
-    grad.addColorStop(0.5, 'rgba(60,90,180,0.08)');
-    grad.addColorStop(1, 'rgba(40,60,140,0)');
+    grad.addColorStop(0, 'rgba(110,150,240,0.35)'); grad.addColorStop(0.2, 'rgba(90,120,220,0.2)');
+    grad.addColorStop(0.5, 'rgba(60,90,180,0.08)'); grad.addColorStop(1, 'rgba(40,60,140,0)');
     gctx.fillStyle = grad; gctx.fillRect(0, 0, 300, 300);
     this.textures.addCanvas('glow', gc);
     playerGlow = this.add.image(player.x, player.y, 'glow').setDepth(9).setBlendMode(Phaser.BlendModes.ADD);
 
-    // --- SPAWN ENEMIES ---
-    spawnOni(this, 900, 640);
-    spawnOni(this, 350, 640);
-    spawnOni(this, 1100, 380);
+    // --- SPAWN ENEMIES (each type at different locations) ---
+    enemies.push(new EnemyOni(this, 900, 640));
+    enemies.push(new EnemyOni(this, 350, 640));
+    enemies.push(new EnemyArcher(this, 1060, 380));
+    enemies.push(new EnemyArcher(this, 200, 510));
+    enemies.push(new EnemyShield(this, 700, 640));
+    enemies.push(new EnemyAssassin(this, 500, 430));
+    enemies.push(new EnemyAssassin(this, 1010, 190));
 
     // --- COLLIDERS ---
     this.physics.add.collider(player, platforms, onLand, null, this);
@@ -280,32 +244,533 @@ function create() {
     };
     this.input.on('pointerdown', (p) => {
         if (p.leftButtonDown()) triggerAttack();
-        // Unlock audio on first click
-        if (!audioCtx) initAudio();
-        startBGM();
+        if (!audioCtx) initAudio(); startBGM();
     });
 
     // --- HUD ---
     createHUD(this);
 
-    // --- AUDIO (CDN + Web Audio) ---
+    // --- AUDIO ---
     initAudio();
-    // BGM starts on first user interaction (browser policy)
     this.input.keyboard.on('keydown', () => { startBGM(); });
 }
 
 // ============================================================
-//  PLATFORMS (semi-transparent, bg-matching)
+//  ENEMY BASE CLASS (OOP)
+// ============================================================
+class Enemy {
+    constructor(scene, x, y, config) {
+        this.scene = scene;
+        this.config = config;
+        this.hp = config.hp;
+        this.maxHp = config.hp;
+        this.dead = false;
+        this.facingRight = false;
+        this.state = 'idle';
+        this.attackTimer = 0;
+        this.attackCd = 0;
+        this.hurtTimer = 0;
+        this.animName = 'idle';
+        this.animFrame = 0;
+        this.animTimer = 0;
+        this.type = config.type || 'enemy';
+
+        // Sprite
+        this.sprite = scene.physics.add.sprite(x, y, config.prefix + '0');
+        this.sprite.setScale(config.scale).setDepth(10).setBounce(0).setCollideWorldBounds(true);
+        this.sprite.body.setMaxVelocityY(900);
+
+        // Dynamic body from frame dims
+        const dims = config.dims || { fw: 256, fh: 256 };
+        const bw = Math.floor(dims.fw * config.bodyWRatio);
+        const bh = Math.floor(dims.fh * config.bodyHRatio);
+        const bx = Math.floor((dims.fw - bw) / 2);
+        const by = Math.floor(dims.fh * config.bodyYOffset);
+        this.sprite.body.setSize(bw, bh).setOffset(bx, by);
+
+        // HP Bar
+        this.hpBg = scene.add.rectangle(x, y - 40, 40, 6, 0x220000, 0.8).setDepth(20);
+        this.hpFill = scene.add.rectangle(x, y - 40, 38, 4, config.hpColor || 0xcc2222, 1).setDepth(21);
+
+        // Type label
+        this.typeLabel = scene.add.text(x, y - 50, config.label || '', {
+            fontFamily: 'monospace', fontSize: '7px', color: config.labelColor || '#ff6644'
+        }).setOrigin(0.5).setDepth(22).setAlpha(0.7);
+    }
+
+    playAnim(name) {
+        if (this.animName === name) return;
+        this.animName = name; this.animFrame = 0; this.animTimer = 0;
+        const anim = this.config.anims[name];
+        if (anim) this.sprite.setTexture(this.config.prefix + anim.frames[0]);
+    }
+
+    updateAnim(delta) {
+        const anim = this.config.anims[this.animName];
+        if (!anim || anim.frames.length <= 1) return;
+        this.animTimer += delta;
+        if (this.animTimer >= 1000 / anim.fps) {
+            this.animTimer -= 1000 / anim.fps;
+            this.animFrame++;
+            if (this.animFrame >= anim.frames.length) this.animFrame = anim.loop ? 0 : anim.frames.length - 1;
+            this.sprite.setTexture(this.config.prefix + anim.frames[this.animFrame]);
+        }
+    }
+
+    updateHPBar() {
+        const s = this.sprite;
+        this.hpBg.setPosition(s.x, s.y - 44);
+        this.hpFill.setPosition(s.x, s.y - 44);
+        const ratio = Math.max(0, this.hp / this.maxHp);
+        this.hpFill.setDisplaySize(38 * ratio, 4);
+        this.typeLabel.setPosition(s.x, s.y - 52);
+    }
+
+    takeDamage(dmg, dir) {
+        if (this.dead) return;
+        this.hp -= dmg; this.hurtTimer = 200;
+        this.sprite.body.setVelocityX(dir * 300); this.sprite.body.setVelocityY(-100);
+        playHitSound();
+        // Damage number
+        const txt = gameScene.add.text(this.sprite.x, this.sprite.y - 30, '-' + dmg, {
+            fontFamily: 'monospace', fontSize: '14px', color: '#ff4444', fontStyle: 'bold'
+        }).setOrigin(0.5).setDepth(30);
+        gameScene.tweens.add({ targets: txt, y: txt.y - 30, alpha: 0, duration: 600, ease: 'Power2', onComplete: () => txt.destroy() });
+        // Blood particles
+        for (let i = 0; i < 5; i++) {
+            const px = this.sprite.x + Phaser.Math.Between(-8, 8), py = this.sprite.y + Phaser.Math.Between(-15, 10);
+            const sp = gameScene.add.circle(px, py, Phaser.Math.Between(1, 3), 0xff4422, 0.9).setDepth(15);
+            gameScene.tweens.add({ targets: sp, x: px + dir * Phaser.Math.Between(10, 40), y: py + Phaser.Math.Between(-20, 10), alpha: 0, duration: 250, onComplete: () => sp.destroy() });
+        }
+        if (this.hp <= 0) this.die();
+    }
+
+    // Can be overridden — Shield blocks from front
+    canTakeDamage(attackDir) { return true; }
+
+    die() {
+        this.dead = true; this.sprite.body.enable = false;
+        const s = this.sprite;
+        // Flash
+        const fl = gameScene.add.circle(s.x, s.y, 30, 0xff2200, 0.5).setDepth(15);
+        gameScene.tweens.add({ targets: fl, scaleX: 2.5, scaleY: 2.5, alpha: 0, duration: 300, onComplete: () => fl.destroy() });
+        // Debris
+        for (let i = 0; i < 12; i++) {
+            const a = Phaser.Math.DegToRad(Phaser.Math.Between(0, 360)), r = Phaser.Math.Between(5, 15);
+            const px = s.x + Math.cos(a) * r, py = s.y + Math.sin(a) * r;
+            const sp = gameScene.add.rectangle(px, py, Phaser.Math.Between(2, 6), Phaser.Math.Between(2, 6),
+                Math.random() < 0.5 ? 0xcc2222 : 0xff6644, 1).setDepth(15);
+            gameScene.tweens.add({ targets: sp, x: px + Math.cos(a) * Phaser.Math.Between(30, 80), y: py + Math.sin(a) * Phaser.Math.Between(30, 80) - 20,
+                alpha: 0, rotation: Phaser.Math.Between(-3, 3), duration: Phaser.Math.Between(300, 600), onComplete: () => sp.destroy() });
+        }
+        // Fade out
+        gameScene.tweens.add({ targets: s, alpha: 0, scaleX: 0, scaleY: 0, duration: 400, ease: 'Power3',
+            onComplete: () => { s.destroy(); this.hpBg.destroy(); this.hpFill.destroy(); this.typeLabel.destroy(); }
+        });
+        // SLAIN text
+        const kt = gameScene.add.text(s.x, s.y - 40, 'SLAIN', { fontFamily: 'monospace', fontSize: '12px', color: '#ff6644', fontStyle: 'bold' }).setOrigin(0.5).setDepth(30);
+        gameScene.tweens.add({ targets: kt, y: kt.y - 30, alpha: 0, duration: 1000, onComplete: () => kt.destroy() });
+        // Respawn after 6s
+        gameScene.time.delayedCall(6000, () => { this.respawn(); });
+    }
+
+    respawn() {
+        const idx = enemies.indexOf(this);
+        if (idx !== -1) enemies.splice(idx, 1);
+        const ne = new this.constructor(gameScene, Phaser.Math.Between(200, 1080), 640);
+        enemies.push(ne);
+        gameScene.physics.add.collider(ne.sprite, platforms);
+        gameScene.physics.add.collider(ne.sprite, walls);
+    }
+
+    checkHitPlayer() {
+        if (isDashing || playerHurtTimer > 0 || playerHP <= 0) return;
+        const dx = Math.abs(player.x - this.sprite.x), dy = Math.abs(player.y - this.sprite.y);
+        if (dx < 50 && dy < 50) {
+            if (isParrying && parryWindow > 0) {
+                triggerParrySuccess(gameScene);
+                this.hurtTimer = 300; this.sprite.body.setVelocityX((this.facingRight ? -1 : 1) * 300);
+                return;
+            }
+            playerHP -= this.config.attackDmg; playerHurtTimer = PLAYER_HURT_IFRAMES;
+            playHurtSound();
+            player.body.setVelocityX((this.facingRight ? -1 : 1) * this.config.knockback);
+            player.body.setVelocityY(-150);
+            player.setTint(0xff4444);
+            gameScene.time.delayedCall(200, () => { if (playerHurtTimer > 0) player.setAlpha(0.6); });
+            gameScene.cameras.main.shake(80, 0.005);
+            updateHUD();
+            // Blood splatter
+            for (let i = 0; i < 6; i++) {
+                const px = player.x + Phaser.Math.Between(-10, 10), py = player.y + Phaser.Math.Between(-15, 15);
+                const sp = gameScene.add.circle(px, py, 2, 0xff2222, 0.8).setDepth(15);
+                gameScene.tweens.add({ targets: sp, x: px + Phaser.Math.Between(-30, 30), y: py - Phaser.Math.Between(10, 40), alpha: 0, duration: 300, onComplete: () => sp.destroy() });
+            }
+            if (playerHP <= 0) playerDeath();
+        }
+    }
+
+    update(delta) {
+        if (this.dead) return;
+        const s = this.sprite;
+        if (!s || !s.body) return;
+
+        // Hurt state
+        if (this.hurtTimer > 0) {
+            this.hurtTimer -= delta;
+            s.setTint(this.hurtTimer % 100 > 50 ? 0xffffff : 0xff4444);
+            this.updateHPBar(); this.updateAnim(delta);
+            return;
+        }
+        s.clearTint();
+        if (this.attackCd > 0) this.attackCd -= delta;
+
+        // Direction to player
+        const dx = player.x - s.x;
+        this.facingRight = dx > 0;
+        s.setFlipX(!this.facingRight);
+
+        // Subclass AI
+        this.updateAI(delta);
+
+        this.updateAnim(delta);
+        this.updateHPBar();
+    }
+
+    // Override in subclasses
+    updateAI(delta) {}
+}
+
+// ============================================================
+//  ONI — Melee Berserker (slow, high damage)
+// ============================================================
+class EnemyOni extends Enemy {
+    static dims = { fw: 256, fh: 256 };
+
+    constructor(scene, x, y) {
+        super(scene, x, y, {
+            type: 'oni', prefix: 'oni_f', label: 'ONI', labelColor: '#ff4444',
+            hp: 120, scale: 0.28, attackDmg: 18, knockback: 280,
+            speed: 110, chaseRange: 300, attackRange: 55,
+            attackDur: 550, attackCooldown: 1300,
+            hpColor: 0xcc2222,
+            bodyWRatio: 0.30, bodyHRatio: 0.50, bodyYOffset: 0.30,
+            dims: EnemyOni.dims,
+            anims: {
+                idle:   { frames: [0, 1, 2, 3], fps: 5, loop: true },
+                walk:   { frames: [4, 5, 6, 7], fps: 8, loop: true },
+                attack: { frames: [8, 9, 10, 11], fps: 10, loop: false },
+                special:{ frames: [12, 13, 14, 15], fps: 6, loop: false }
+            }
+        });
+    }
+
+    updateAI(delta) {
+        const s = this.sprite;
+        const dx = player.x - s.x, dy = player.y - s.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+
+        if (this.state === 'attack') {
+            this.attackTimer -= delta;
+            this.playAnim('attack');
+            if (this.attackTimer < this.config.attackDur * 0.3) {
+                s.setTint(0xff6644);
+                if (this.attackTimer < this.config.attackDur * 0.25 && this.attackTimer > this.config.attackDur * 0.15) this.checkHitPlayer();
+            }
+            if (this.attackTimer <= 0) { this.state = 'idle'; this.attackCd = this.config.attackCooldown; s.clearTint(); }
+            s.body.setVelocityX(0);
+        } else if (dist < this.config.attackRange && this.attackCd <= 0) {
+            this.state = 'attack'; this.attackTimer = this.config.attackDur; s.body.setVelocityX(0);
+        } else if (dist < this.config.chaseRange) {
+            this.state = 'chase'; this.playAnim('walk');
+            s.body.setVelocityX((dx > 0 ? 1 : -1) * this.config.speed);
+        } else {
+            this.state = 'idle'; this.playAnim('idle');
+            s.body.setVelocityX(Math.sin(Date.now() * 0.001 + s.x) * 25);
+        }
+    }
+}
+
+// ============================================================
+//  ARCHER — Ranged Kiting AI
+// ============================================================
+class EnemyArcher extends Enemy {
+    static dims = { fw: 256, fh: 256 };
+
+    constructor(scene, x, y) {
+        super(scene, x, y, {
+            type: 'archer', prefix: 'archer_f', label: 'ARCHER', labelColor: '#44cc44',
+            hp: 70, scale: 0.26, attackDmg: 10, knockback: 200,
+            speed: 130, chaseRange: 400, attackRange: 250, fleeRange: 100,
+            attackDur: 600, attackCooldown: 1800,
+            hpColor: 0x44cc44,
+            bodyWRatio: 0.28, bodyHRatio: 0.50, bodyYOffset: 0.30,
+            dims: EnemyArcher.dims,
+            anims: {
+                idle:   { frames: [0, 1, 2, 3], fps: 5, loop: true },
+                walk:   { frames: [4, 5, 6, 7], fps: 8, loop: true },
+                shoot:  { frames: [8, 9, 10, 11], fps: 8, loop: false },
+                flee:   { frames: [12, 13, 14, 15], fps: 10, loop: true }
+            }
+        });
+        this.shootTimer = 0;
+    }
+
+    updateAI(delta) {
+        const s = this.sprite;
+        const dx = player.x - s.x, dy = player.y - s.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+
+        // Too close → flee (kiting)
+        if (dist < this.config.fleeRange) {
+            this.state = 'flee'; this.playAnim('flee');
+            s.body.setVelocityX((dx > 0 ? -1 : 1) * this.config.speed * 1.3);
+        }
+        // In shooting range → shoot
+        else if (dist < this.config.attackRange && this.attackCd <= 0) {
+            this.state = 'shoot';
+            this.playAnim('shoot');
+            s.body.setVelocityX(0);
+            this.attackCd = this.config.attackCooldown;
+            // Fire arrow after short delay
+            gameScene.time.delayedCall(300, () => {
+                if (!this.dead) this.fireArrow();
+            });
+        }
+        // In chase range but too far to shoot
+        else if (dist < this.config.chaseRange && dist > this.config.attackRange * 0.8) {
+            this.state = 'chase'; this.playAnim('walk');
+            s.body.setVelocityX((dx > 0 ? 1 : -1) * this.config.speed * 0.7);
+        }
+        // Idle
+        else {
+            this.state = 'idle'; this.playAnim('idle');
+            s.body.setVelocityX(0);
+        }
+    }
+
+    fireArrow() {
+        playArrowSound();
+        const dir = this.facingRight ? 1 : -1;
+        const ax = this.sprite.x + dir * 20, ay = this.sprite.y - 5;
+        // Arrow graphics
+        const arrow = gameScene.add.graphics().setDepth(15);
+        arrow.lineStyle(2, 0x88ff88, 1);
+        arrow.lineBetween(0, 0, dir * 18, 0);
+        arrow.fillStyle(0xffffff, 1);
+        arrow.fillTriangle(dir * 18, -3, dir * 18, 3, dir * 24, 0);
+        arrow.setPosition(ax, ay);
+        // Arrow physics
+        const arrowObj = { gfx: arrow, x: ax, y: ay, vx: dir * 450, vy: 0, life: 2000, dmg: this.config.attackDmg };
+        projectiles.push(arrowObj);
+    }
+}
+
+// ============================================================
+//  SHIELD — Tank, only hittable from behind
+// ============================================================
+class EnemyShield extends Enemy {
+    static dims = { fw: 256, fh: 256 };
+
+    constructor(scene, x, y) {
+        super(scene, x, y, {
+            type: 'shield', prefix: 'shield_f', label: 'SHIELD', labelColor: '#4488ff',
+            hp: 200, scale: 0.30, attackDmg: 20, knockback: 350,
+            speed: 55, chaseRange: 250, attackRange: 50,
+            attackDur: 700, attackCooldown: 2000,
+            hpColor: 0x4488ff,
+            bodyWRatio: 0.35, bodyHRatio: 0.55, bodyYOffset: 0.28,
+            dims: EnemyShield.dims,
+            anims: {
+                idle:   { frames: [0, 1, 2, 3], fps: 4, loop: true },
+                walk:   { frames: [4, 5, 6, 7], fps: 5, loop: true },
+                block:  { frames: [8, 9, 10, 11], fps: 6, loop: false },
+                stagger:{ frames: [12, 13, 14, 15], fps: 8, loop: false }
+            }
+        });
+        this.blockFlash = null;
+    }
+
+    canTakeDamage(attackDir) {
+        // attackDir is +1 (hit from right) or -1 (hit from left)
+        // Shield blocks if player is in front (same side enemy is facing)
+        const playerOnRight = player.x > this.sprite.x;
+        const enemyFacingRight = this.facingRight;
+        // Block: player attacks from the front = direction enemy faces
+        if ((enemyFacingRight && playerOnRight) || (!enemyFacingRight && !playerOnRight)) {
+            // BLOCKED!
+            this.showBlock();
+            return false;
+        }
+        return true; // Hit from behind — takes damage
+    }
+
+    showBlock() {
+        playBlockSound();
+        const s = this.sprite;
+        this.playAnim('block');
+        // Block spark
+        const dir = this.facingRight ? 1 : -1;
+        const bx = s.x + dir * 25, by = s.y - 10;
+        for (let i = 0; i < 6; i++) {
+            const px = bx + Phaser.Math.Between(-5, 5), py = by + Phaser.Math.Between(-10, 10);
+            const sp = gameScene.add.circle(px, py, 2, 0x4488ff, 1).setDepth(16);
+            gameScene.tweens.add({ targets: sp, x: px + Phaser.Math.Between(-20, 20), y: py + Phaser.Math.Between(-20, 5), alpha: 0, duration: 200, onComplete: () => sp.destroy() });
+        }
+        // BLOCKED text
+        const bt = gameScene.add.text(s.x, s.y - 40, 'BLOCKED!', {
+            fontFamily: 'monospace', fontSize: '10px', color: '#4488ff', fontStyle: 'bold'
+        }).setOrigin(0.5).setDepth(30);
+        gameScene.tweens.add({ targets: bt, y: bt.y - 20, alpha: 0, duration: 600, onComplete: () => bt.destroy() });
+        // Knockback player
+        const kbDir = player.x > s.x ? 1 : -1;
+        player.body.setVelocityX(kbDir * 200);
+    }
+
+    updateAI(delta) {
+        const s = this.sprite;
+        const dx = player.x - s.x, dy = player.y - s.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+
+        if (this.state === 'attack') {
+            this.attackTimer -= delta;
+            this.playAnim('block'); // Uses block anim for heavy attack
+            if (this.attackTimer < this.config.attackDur * 0.3) {
+                s.setTint(0x4488ff);
+                if (this.attackTimer < this.config.attackDur * 0.25 && this.attackTimer > this.config.attackDur * 0.15) this.checkHitPlayer();
+            }
+            if (this.attackTimer <= 0) { this.state = 'idle'; this.attackCd = this.config.attackCooldown; s.clearTint(); }
+            s.body.setVelocityX(0);
+        } else if (dist < this.config.attackRange && this.attackCd <= 0) {
+            this.state = 'attack'; this.attackTimer = this.config.attackDur; s.body.setVelocityX(0);
+        } else if (dist < this.config.chaseRange) {
+            this.state = 'chase'; this.playAnim('walk');
+            s.body.setVelocityX((dx > 0 ? 1 : -1) * this.config.speed);
+        } else {
+            this.state = 'idle'; this.playAnim('idle');
+            s.body.setVelocityX(0);
+        }
+    }
+}
+
+// ============================================================
+//  ASSASSIN — Fast, goes invisible at low HP
+// ============================================================
+class EnemyAssassin extends Enemy {
+    static dims = { fw: 256, fh: 256 };
+
+    constructor(scene, x, y) {
+        super(scene, x, y, {
+            type: 'assassin', prefix: 'assassin_f', label: 'ASSASSIN', labelColor: '#cc44cc',
+            hp: 80, scale: 0.25, attackDmg: 22, knockback: 200,
+            speed: 220, chaseRange: 350, attackRange: 45,
+            attackDur: 350, attackCooldown: 900,
+            hpColor: 0xcc44cc,
+            bodyWRatio: 0.26, bodyHRatio: 0.50, bodyYOffset: 0.30,
+            dims: EnemyAssassin.dims,
+            anims: {
+                idle:   { frames: [0, 1, 2, 3], fps: 6, loop: true },
+                run:    { frames: [4, 5, 6, 7], fps: 12, loop: true },
+                attack: { frames: [8, 9, 10, 11], fps: 14, loop: false },
+                vanish: { frames: [12, 13, 14, 15], fps: 6, loop: true }
+            }
+        });
+        this.invisTimer = 0;
+        this.isInvisible = false;
+    }
+
+    updateAI(delta) {
+        const s = this.sprite;
+        const dx = player.x - s.x, dy = player.y - s.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+
+        // Invisibility at <50% HP
+        if (this.hp < this.maxHp * 0.5 && !this.isInvisible && this.invisTimer <= 0) {
+            this.isInvisible = true;
+            this.invisTimer = 3000; // 3 seconds invisible
+            this.playAnim('vanish');
+            s.setAlpha(0.1);
+            this.typeLabel.setAlpha(0);
+            this.hpBg.setAlpha(0); this.hpFill.setAlpha(0);
+        }
+
+        if (this.isInvisible) {
+            this.invisTimer -= delta;
+            if (this.invisTimer <= 0) {
+                this.isInvisible = false;
+                s.setAlpha(1);
+                this.typeLabel.setAlpha(0.7);
+                this.hpBg.setAlpha(0.8); this.hpFill.setAlpha(1);
+            }
+        }
+
+        // Attack
+        if (this.state === 'attack') {
+            this.attackTimer -= delta;
+            this.playAnim('attack');
+            if (this.attackTimer < this.config.attackDur * 0.35) {
+                s.setTint(0xcc44cc);
+                if (this.attackTimer < this.config.attackDur * 0.3 && this.attackTimer > this.config.attackDur * 0.15) this.checkHitPlayer();
+            }
+            if (this.attackTimer <= 0) { this.state = 'idle'; this.attackCd = this.config.attackCooldown; s.clearTint(); }
+            s.body.setVelocityX(0);
+        } else if (dist < this.config.attackRange && this.attackCd <= 0 && !this.isInvisible) {
+            this.state = 'attack'; this.attackTimer = this.config.attackDur; s.body.setVelocityX(0);
+        } else if (dist < this.config.chaseRange) {
+            this.state = 'chase'; this.playAnim(this.isInvisible ? 'vanish' : 'run');
+            s.body.setVelocityX((dx > 0 ? 1 : -1) * this.config.speed);
+        } else {
+            this.state = 'idle'; this.playAnim(this.isInvisible ? 'vanish' : 'idle');
+            s.body.setVelocityX(Math.sin(Date.now() * 0.002 + s.x) * 40);
+        }
+    }
+}
+
+// ============================================================
+//  PROJECTILE SYSTEM (Archer arrows)
+// ============================================================
+function updateProjectiles(delta) {
+    for (let i = projectiles.length - 1; i >= 0; i--) {
+        const p = projectiles[i];
+        p.life -= delta;
+        p.x += p.vx * (delta / 1000);
+        p.y += p.vy * (delta / 1000);
+        p.gfx.setPosition(p.x, p.y);
+
+        // Hit player?
+        if (!isDashing && playerHurtTimer <= 0 && playerHP > 0) {
+            const dx = Math.abs(p.x - player.x), dy = Math.abs(p.y - player.y);
+            if (dx < 20 && dy < 30) {
+                playerHP -= p.dmg; playerHurtTimer = PLAYER_HURT_IFRAMES;
+                playHurtSound();
+                const kbDir = p.vx > 0 ? 1 : -1;
+                player.body.setVelocityX(kbDir * 150); player.body.setVelocityY(-80);
+                player.setTint(0xff4444);
+                gameScene.cameras.main.shake(60, 0.003);
+                updateHUD();
+                if (playerHP <= 0) playerDeath();
+                p.gfx.destroy(); projectiles.splice(i, 1);
+                continue;
+            }
+        }
+
+        // Out of bounds or expired
+        if (p.life <= 0 || p.x < -50 || p.x > W + 50) {
+            p.gfx.destroy(); projectiles.splice(i, 1);
+        }
+    }
+}
+
+// ============================================================
+//  PLATFORMS
 // ============================================================
 function makePlatform(scene, x, y, w, h, type) {
     const key = 'p_' + x + '_' + y;
     const g = scene.add.graphics();
     if (type === 'ground') {
-        // Dark ground strip — blends with background
         g.fillStyle(0x0e0e18, 1); g.fillRect(0, 0, w, h);
         g.lineStyle(1, 0x222244, 0.5); g.lineBetween(0, 0, w, 0);
     } else {
-        // Wood platforms — subtle, translucent
         g.fillStyle(0x1a1420, 1); g.fillRect(0, 0, w, h);
         g.lineStyle(1, 0x332844, 0.7); g.lineBetween(0, 0, w, 0);
         g.lineStyle(1, 0x0e0a14, 0.5); g.lineBetween(0, h - 1, w, h - 1);
@@ -336,7 +801,6 @@ function createHUD(scene) {
     scene.add.text(16, 16, 'A/D Move  W/SPACE Jump(x2)  SHIFT Dash  X Attack  C Parry', {
         fontFamily: 'monospace', fontSize: '10px', color: '#445566'
     }).setDepth(100).setScrollFactor(0);
-
     scene.add.text(W / z - 16, 16, "RONIN'S REDEMPTION", {
         fontFamily: 'monospace', fontSize: '13px', color: '#334455', fontStyle: 'bold'
     }).setOrigin(1, 0).setDepth(100).setScrollFactor(0);
@@ -360,183 +824,7 @@ function updateHUD() {
 }
 
 // ============================================================
-//  ONI ENEMY SYSTEM (sprite sheet)
-// ============================================================
-function spawnOni(scene, x, y) {
-    const sprite = scene.physics.add.sprite(x, y, 'oni_f0');
-    sprite.setScale(ONI.scale).setDepth(10).setBounce(0).setCollideWorldBounds(true);
-    // Dynamic body from actual frame dimensions — centered, 30% width, 55% height
-    const bw = Math.floor(oniFW * 0.30);
-    const bh = Math.floor(oniFH * 0.55);
-    const bx = Math.floor((oniFW - bw) / 2);
-    const by = Math.floor(oniFH * 0.30);
-    sprite.body.setSize(bw, bh).setOffset(bx, by);
-    sprite.body.setMaxVelocityY(900);
-
-    const enemy = {
-        sprite, hp: ONI.hp, maxHp: ONI.hp,
-        state: 'idle', attackTimer: 0, attackCd: 0, hurtTimer: 0,
-        facingRight: false, dead: false,
-        animName: 'idle', animFrame: 0, animTimer: 0,
-        hpBg: scene.add.rectangle(x, y - 40, 36, 5, 0x220000, 0.8).setDepth(20),
-        hpFill: scene.add.rectangle(x, y - 40, 34, 3, 0xcc2222, 1).setDepth(21)
-    };
-    enemies.push(enemy);
-    return enemy;
-}
-
-function oniPlayAnim(e, name) {
-    if (e.animName === name) return;
-    e.animName = name; e.animFrame = 0; e.animTimer = 0;
-    e.sprite.setTexture('oni_f' + ONI_ANIMS[name].frames[0]);
-}
-
-function oniUpdateAnim(e, delta) {
-    const anim = ONI_ANIMS[e.animName];
-    if (!anim || anim.frames.length <= 1) return;
-    e.animTimer += delta;
-    if (e.animTimer >= 1000 / anim.fps) {
-        e.animTimer -= 1000 / anim.fps;
-        e.animFrame++;
-        if (e.animFrame >= anim.frames.length) e.animFrame = anim.loop ? 0 : anim.frames.length - 1;
-        e.sprite.setTexture('oni_f' + anim.frames[e.animFrame]);
-    }
-}
-
-function updateEnemies(delta) {
-    enemies.forEach(e => {
-        if (e.dead) return;
-        const s = e.sprite;
-        if (!s || !s.body) return;
-
-        if (e.hurtTimer > 0) {
-            e.hurtTimer -= delta;
-            s.setTint(e.hurtTimer % 100 > 50 ? 0xffffff : 0xff4444);
-            updateEnemyHPBar(e); oniUpdateAnim(e, delta);
-            return;
-        }
-        s.clearTint();
-        if (e.attackCd > 0) e.attackCd -= delta;
-
-        const dx = player.x - s.x, dy = player.y - s.y;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        e.facingRight = dx > 0;
-        s.setFlipX(!e.facingRight);
-
-        if (e.state === 'attack') {
-            e.attackTimer -= delta;
-            oniPlayAnim(e, 'attack');
-            if (e.attackTimer < ONI.attackDur * 0.3) {
-                s.setTint(0xff6644);
-                if (e.attackTimer < ONI.attackDur * 0.25 && e.attackTimer > ONI.attackDur * 0.15) checkOniHitPlayer(e);
-            }
-            if (e.attackTimer <= 0) { e.state = 'idle'; e.attackCd = ONI.attackCd; s.clearTint(); }
-            s.body.setVelocityX(0);
-        } else if (dist < ONI.attackRange && e.attackCd <= 0) {
-            e.state = 'attack'; e.attackTimer = ONI.attackDur; s.body.setVelocityX(0);
-        } else if (dist < ONI.chaseRange) {
-            e.state = 'chase'; oniPlayAnim(e, 'walk');
-            s.body.setVelocityX((dx > 0 ? 1 : -1) * ONI.speed);
-        } else {
-            e.state = 'idle'; oniPlayAnim(e, 'idle');
-            s.body.setVelocityX(Math.sin(Date.now() * 0.001 + s.x) * 30);
-        }
-        oniUpdateAnim(e, delta);
-        updateEnemyHPBar(e);
-    });
-}
-
-function updateEnemyHPBar(e) {
-    const s = e.sprite;
-    e.hpBg.setPosition(s.x, s.y - 42);
-    const ratio = Math.max(0, e.hp / e.maxHp);
-    e.hpFill.setPosition(s.x - 17 + 17 * ratio, s.y - 42);
-    e.hpFill.setDisplaySize(34 * ratio, 3);
-}
-
-function checkOniHitPlayer(e) {
-    if (isDashing || playerHurtTimer > 0 || playerHP <= 0) return;
-    const dx = Math.abs(player.x - e.sprite.x), dy = Math.abs(player.y - e.sprite.y);
-    if (dx < 50 && dy < 50) {
-        if (isParrying && parryWindow > 0) {
-            triggerParrySuccess(gameScene);
-            e.hurtTimer = 300; e.sprite.body.setVelocityX((e.facingRight ? -1 : 1) * 300);
-            return;
-        }
-        playerHP -= ONI.attackDmg; playerHurtTimer = PLAYER_HURT_IFRAMES;
-        playHurtSound();
-        player.body.setVelocityX((e.facingRight ? -1 : 1) * ONI.knockback);
-        player.body.setVelocityY(-150);
-        player.setTint(0xff4444);
-        gameScene.time.delayedCall(200, () => { if (playerHurtTimer > 0) player.setAlpha(0.6); });
-        gameScene.cameras.main.shake(80, 0.005);
-        updateHUD();
-        for (let i = 0; i < 6; i++) {
-            const px = player.x + Phaser.Math.Between(-10, 10), py = player.y + Phaser.Math.Between(-15, 15);
-            const sp = gameScene.add.circle(px, py, 2, 0xff2222, 0.8).setDepth(15);
-            gameScene.tweens.add({ targets: sp, x: px + Phaser.Math.Between(-30, 30), y: py - Phaser.Math.Between(10, 40), alpha: 0, duration: 300, onComplete: () => sp.destroy() });
-        }
-        if (playerHP <= 0) playerDeath();
-    }
-}
-
-function damageEnemy(e, dmg, dir) {
-    if (e.dead) return;
-    e.hp -= dmg; e.hurtTimer = 200;
-    e.sprite.body.setVelocityX(dir * 300); e.sprite.body.setVelocityY(-100);
-    playHitSound();
-    const txt = gameScene.add.text(e.sprite.x, e.sprite.y - 30, '-' + dmg, { fontFamily: 'monospace', fontSize: '14px', color: '#ff4444', fontStyle: 'bold' }).setOrigin(0.5).setDepth(30);
-    gameScene.tweens.add({ targets: txt, y: txt.y - 30, alpha: 0, duration: 600, ease: 'Power2', onComplete: () => txt.destroy() });
-    for (let i = 0; i < 5; i++) {
-        const px = e.sprite.x + Phaser.Math.Between(-8, 8), py = e.sprite.y + Phaser.Math.Between(-15, 10);
-        const sp = gameScene.add.circle(px, py, Phaser.Math.Between(1, 3), 0xff4422, 0.9).setDepth(15);
-        gameScene.tweens.add({ targets: sp, x: px + dir * Phaser.Math.Between(10, 40), y: py + Phaser.Math.Between(-20, 10), alpha: 0, duration: 250, onComplete: () => sp.destroy() });
-    }
-    if (e.hp <= 0) killEnemy(e);
-}
-
-function killEnemy(e) {
-    e.dead = true; e.sprite.body.enable = false;
-    const fl = gameScene.add.circle(e.sprite.x, e.sprite.y, 30, 0xff2200, 0.5).setDepth(15);
-    gameScene.tweens.add({ targets: fl, scaleX: 2.5, scaleY: 2.5, alpha: 0, duration: 300, onComplete: () => fl.destroy() });
-    for (let i = 0; i < 12; i++) {
-        const a = Phaser.Math.DegToRad(Phaser.Math.Between(0, 360)), r = Phaser.Math.Between(5, 15);
-        const px = e.sprite.x + Math.cos(a) * r, py = e.sprite.y + Math.sin(a) * r;
-        const sp = gameScene.add.rectangle(px, py, Phaser.Math.Between(2, 6), Phaser.Math.Between(2, 6), Math.random() < 0.5 ? 0xcc2222 : 0xff6644, 1).setDepth(15);
-        gameScene.tweens.add({ targets: sp, x: px + Math.cos(a) * Phaser.Math.Between(30, 80), y: py + Math.sin(a) * Phaser.Math.Between(30, 80) - 20, alpha: 0, rotation: Phaser.Math.Between(-3, 3), duration: Phaser.Math.Between(300, 600), onComplete: () => sp.destroy() });
-    }
-    gameScene.tweens.add({ targets: e.sprite, alpha: 0, scaleX: 0, scaleY: 0, duration: 400, ease: 'Power3', onComplete: () => { e.sprite.destroy(); e.hpBg.destroy(); e.hpFill.destroy(); } });
-    const kt = gameScene.add.text(e.sprite.x, e.sprite.y - 40, 'SLAIN', { fontFamily: 'monospace', fontSize: '12px', color: '#ff6644', fontStyle: 'bold' }).setOrigin(0.5).setDepth(30);
-    gameScene.tweens.add({ targets: kt, y: kt.y - 30, alpha: 0, duration: 1000, onComplete: () => kt.destroy() });
-    gameScene.time.delayedCall(5000, () => {
-        const idx = enemies.indexOf(e);
-        if (idx !== -1) enemies.splice(idx, 1);
-        const ne = spawnOni(gameScene, Phaser.Math.Between(200, 1080), 640);
-        gameScene.physics.add.collider(ne.sprite, platforms);
-        gameScene.physics.add.collider(ne.sprite, walls);
-    });
-}
-
-function playerDeath() {
-    playerHP = 0; updateHUD();
-    const fl = gameScene.add.rectangle(W / 2, H / 2, W, H, 0xff0000, 0.3).setDepth(200).setScrollFactor(0);
-    gameScene.tweens.add({ targets: fl, alpha: 0, duration: 500, onComplete: () => fl.destroy() });
-    const z = 1.6;
-    const dt = gameScene.add.text(W / z / 2, H / z / 2, 'DEATH', { fontFamily: 'monospace', fontSize: '32px', color: '#ff2222', fontStyle: 'bold' }).setOrigin(0.5).setDepth(201).setScrollFactor(0).setAlpha(0);
-    gameScene.tweens.add({ targets: dt, alpha: 1, duration: 500 });
-    const rt = gameScene.add.text(W / z / 2, H / z / 2 + 30, 'Press R to revive', { fontFamily: 'monospace', fontSize: '12px', color: '#888888' }).setOrigin(0.5).setDepth(201).setScrollFactor(0).setAlpha(0);
-    gameScene.tweens.add({ targets: rt, alpha: 1, duration: 500, delay: 500 });
-    const rKey = gameScene.input.keyboard.addKey('R');
-    const reviveHandler = () => {
-        playerHP = playerMaxHP; playerHurtTimer = PLAYER_HURT_IFRAMES; updateHUD();
-        player.setAlpha(1).clearTint(); player.setPosition(640, 600); player.body.setVelocity(0, 0);
-        dt.destroy(); rt.destroy(); rKey.off('down', reviveHandler);
-    };
-    rKey.on('down', reviveHandler);
-}
-
-// ============================================================
-//  SPRITE ANIMATION (player)
+//  PLAYER ANIMATION
 // ============================================================
 const ANIMS = {
     idle: { frames: [0, 1, 2, 3], fps: 6, loop: true },
@@ -584,6 +872,27 @@ function drawBackground(scene) {
 }
 
 // ============================================================
+//  PLAYER DEATH
+// ============================================================
+function playerDeath() {
+    playerHP = 0; updateHUD();
+    const fl = gameScene.add.rectangle(W / 2, H / 2, W, H, 0xff0000, 0.3).setDepth(200).setScrollFactor(0);
+    gameScene.tweens.add({ targets: fl, alpha: 0, duration: 500, onComplete: () => fl.destroy() });
+    const z = 1.6;
+    const dt = gameScene.add.text(W / z / 2, H / z / 2, 'DEATH', { fontFamily: 'monospace', fontSize: '32px', color: '#ff2222', fontStyle: 'bold' }).setOrigin(0.5).setDepth(201).setScrollFactor(0).setAlpha(0);
+    gameScene.tweens.add({ targets: dt, alpha: 1, duration: 500 });
+    const rt = gameScene.add.text(W / z / 2, H / z / 2 + 30, 'Press R to revive', { fontFamily: 'monospace', fontSize: '12px', color: '#888888' }).setOrigin(0.5).setDepth(201).setScrollFactor(0).setAlpha(0);
+    gameScene.tweens.add({ targets: rt, alpha: 1, duration: 500, delay: 500 });
+    const rKey = gameScene.input.keyboard.addKey('R');
+    const reviveHandler = () => {
+        playerHP = playerMaxHP; playerHurtTimer = PLAYER_HURT_IFRAMES; updateHUD();
+        player.setAlpha(1).clearTint(); player.setPosition(640, 600); player.body.setVelocity(0, 0);
+        dt.destroy(); rt.destroy(); rKey.off('down', reviveHandler);
+    };
+    rKey.on('down', reviveHandler);
+}
+
+// ============================================================
 //  UPDATE
 // ============================================================
 function update(time, delta) {
@@ -602,7 +911,11 @@ function update(time, delta) {
 
     if (hitstopTimer > 0) { hitstopTimer -= delta; return; }
 
-    updateEnemies(delta);
+    // Update all enemies (OOP)
+    enemies.forEach(e => e.update(delta));
+    // Update projectiles
+    updateProjectiles(delta);
+
     updateParry(delta);
     if (comboTimer > 0) { comboTimer -= delta; if (comboTimer <= 0) resetCombo(); }
 
@@ -628,13 +941,13 @@ function update(time, delta) {
         else { spawnDashGhost(gameScene); return; }
     }
 
-    // --- INPUT (all keys read independently) ---
+    // --- INPUT ---
     const mL = keys.A.isDown || cursors.left.isDown;
     const mR = keys.D.isDown || cursors.right.isDown;
     const wantJump = Phaser.Input.Keyboard.JustDown(keys.SPACE) || Phaser.Input.Keyboard.JustDown(cursors.up) || Phaser.Input.Keyboard.JustDown(keys.W);
     const holdJump = keys.W.isDown || keys.SPACE.isDown || cursors.up.isDown;
 
-    // Horizontal (always works, even mid-air)
+    // Horizontal
     if (onWall && !onGround) {
         wallDirection = onL ? -1 : 1;
         if (body.velocity.y > WALL_SLIDE) body.setVelocityY(WALL_SLIDE);
@@ -654,7 +967,7 @@ function update(time, delta) {
     }
     player.setFlipX(!facingRight);
 
-    // Jump (independent, hold = auto-jump on land)
+    // Jump
     if (wantJump) jumpBufferTimer = JUMP_BUFFER;
     if (holdJump && onGround && jumpCount === 0 && jumpBufferTimer <= 0) jumpBufferTimer = JUMP_BUFFER;
 
@@ -711,9 +1024,14 @@ function triggerAttack() {
     spawnBladeParticles(gameScene, hx, hy, dir, step);
     player.body.setVelocityX(dir * atk.lunge);
 
+    // Hit enemies — check canTakeDamage for shield blocking
     enemies.forEach(e => {
         if (e.dead || e.hurtTimer > 0) return;
-        if (Math.abs(e.sprite.x - hx) < atk.hb.w && Math.abs(e.sprite.y - hy) < atk.hb.h + 20) damageEnemy(e, atk.dmg, dir);
+        if (Math.abs(e.sprite.x - hx) < atk.hb.w && Math.abs(e.sprite.y - hy) < atk.hb.h + 20) {
+            if (e.canTakeDamage(dir)) {
+                e.takeDamage(atk.dmg, dir);
+            }
+        }
     });
 
     hitstopTimer = HITSTOP_MS;
@@ -797,7 +1115,6 @@ function startDash(scene) {
     playAnim('dash');
     player.body.setVelocityX(DASH_SPEED * (facingRight ? 1 : -1));
     playDashSound();
-
     const fl = scene.add.circle(player.x, player.y, 30, 0xffffff, 0.5).setDepth(9);
     scene.tweens.add({ targets: fl, scaleX: 3, scaleY: 3, alpha: 0, duration: 200, ease: 'Power3', onComplete: () => fl.destroy() });
     const d = facingRight ? -1 : 1;
