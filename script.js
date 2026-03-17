@@ -2,7 +2,7 @@
 //  RONIN'S REDEMPTION — Full Combat + Sprite Enemies + Audio
 //  Player: samurai_sheet.jpg (4x3, 12 frames)
 //  Enemy:  enemy_sheet.jpg   (4x3, 12 frames)
-//  Audio:  Web Audio API procedural sound effects
+//  Audio:  CDN + Web Audio API
 // ============================================================
 
 const W = 1280, H = 720;
@@ -32,6 +32,10 @@ const PLAYER_HURT_IFRAMES = 600;
 
 // ===================== AUDIO =====================
 let audioCtx = null;
+let slashAudio = null, bgmAudio = null;
+
+// ===================== ENEMY FRAME DIMS (set dynamically) =====================
+let oniFW = 256, oniFH = 341;
 
 // ===================== HUD =====================
 let hpBarBg, hpBarFill, hpBarBorder, hpText;
@@ -62,9 +66,8 @@ const ATTACKS = [
 const ONI = {
     hp: 100, speed: 120, chaseRange: 300, attackRange: 55,
     attackDur: 500, attackCd: 1200, attackDmg: 15, knockback: 250,
-    scale: 0.25,
-    // Enemy body: character in frames sits roughly x=60..200, y=100..310
-    bodyW: 80, bodyH: 180, bodyOX: 88, bodyOY: 100
+    scale: 0.28
+    // bodyW, bodyH, bodyOX, bodyOY are set dynamically from frame dimensions
 };
 
 const ONI_ANIMS = {
@@ -74,38 +77,32 @@ const ONI_ANIMS = {
 };
 
 // ============================================================
-//  WEB AUDIO — Procedural Sound Effects (no external files)
+//  AUDIO — CDN sounds + Web Audio fallback
 // ============================================================
-function initWebAudio() {
+function initAudio() {
     try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {}
+    // CDN slash sound
+    slashAudio = new Audio('https://actions.google.com/sounds/v1/science_fiction/swish_vroom.ogg');
+    slashAudio.volume = 0.4;
+    slashAudio.load();
+    // CDN BGM
+    bgmAudio = new Audio('https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3');
+    bgmAudio.volume = 0.12;
+    bgmAudio.loop = true;
+    bgmAudio.load();
 }
 
 function playSlashSound() {
-    if (!audioCtx) return;
-    const t = audioCtx.currentTime;
-    // White noise burst + high-pass = sword whoosh
-    const dur = 0.12 + Math.random() * 0.06;
-    const buf = audioCtx.createBuffer(1, audioCtx.sampleRate * dur, audioCtx.sampleRate);
-    const data = buf.getChannelData(0);
-    for (let i = 0; i < data.length; i++) {
-        const env = 1 - (i / data.length);
-        data[i] = (Math.random() * 2 - 1) * env * env;
+    if (slashAudio) {
+        const s = slashAudio.cloneNode();
+        s.volume = 0.35 + Math.random() * 0.15;
+        s.play().catch(() => {});
     }
-    const src = audioCtx.createBufferSource();
-    src.buffer = buf;
-    const hp = audioCtx.createBiquadFilter();
-    hp.type = 'highpass'; hp.frequency.value = 2000 + Math.random() * 2000;
-    const gain = audioCtx.createGain();
-    gain.gain.setValueAtTime(0.25, t);
-    gain.gain.exponentialRampToValueAtTime(0.001, t + dur);
-    src.connect(hp).connect(gain).connect(audioCtx.destination);
-    src.start(t); src.stop(t + dur);
 }
 
 function playHitSound() {
     if (!audioCtx) return;
     const t = audioCtx.currentTime;
-    // Low thud + short noise
     const osc = audioCtx.createOscillator();
     osc.type = 'sine'; osc.frequency.setValueAtTime(150, t);
     osc.frequency.exponentialRampToValueAtTime(40, t + 0.15);
@@ -114,7 +111,6 @@ function playHitSound() {
     gain.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
     osc.connect(gain).connect(audioCtx.destination);
     osc.start(t); osc.stop(t + 0.15);
-    // Impact noise
     const dur = 0.06;
     const buf = audioCtx.createBuffer(1, audioCtx.sampleRate * dur, audioCtx.sampleRate);
     const data = buf.getChannelData(0);
@@ -127,7 +123,6 @@ function playHitSound() {
 function playHurtSound() {
     if (!audioCtx) return;
     const t = audioCtx.currentTime;
-    // Descending tone = pain
     const osc = audioCtx.createOscillator();
     osc.type = 'sawtooth'; osc.frequency.setValueAtTime(400, t);
     osc.frequency.exponentialRampToValueAtTime(100, t + 0.25);
@@ -141,7 +136,6 @@ function playHurtSound() {
 function playDashSound() {
     if (!audioCtx) return;
     const t = audioCtx.currentTime;
-    // Fast whoosh
     const dur = 0.1;
     const buf = audioCtx.createBuffer(1, audioCtx.sampleRate * dur, audioCtx.sampleRate);
     const data = buf.getChannelData(0);
@@ -157,32 +151,11 @@ function playDashSound() {
     src.start(t); src.stop(t + dur);
 }
 
-// BGM: simple ambient loop using oscillators
-let bgmNodes = null;
+let bgmStarted = false;
 function startBGM() {
-    if (!audioCtx || bgmNodes) return;
-    const gain = audioCtx.createGain();
-    gain.gain.value = 0.04;
-    gain.connect(audioCtx.destination);
-    const notes = [110, 146.83, 164.81, 130.81]; // Am chord tones
-    const oscs = notes.map((freq, i) => {
-        const osc = audioCtx.createOscillator();
-        osc.type = i < 2 ? 'sine' : 'triangle';
-        osc.frequency.value = freq;
-        const g = audioCtx.createGain();
-        g.gain.value = i === 0 ? 0.5 : 0.3;
-        // Slow LFO for atmosphere
-        const lfo = audioCtx.createOscillator();
-        lfo.frequency.value = 0.1 + i * 0.05;
-        const lfoGain = audioCtx.createGain();
-        lfoGain.gain.value = 0.15;
-        lfo.connect(lfoGain).connect(g.gain);
-        lfo.start();
-        osc.connect(g).connect(gain);
-        osc.start();
-        return { osc, lfo };
-    });
-    bgmNodes = { gain, oscs };
+    if (bgmStarted || !bgmAudio) return;
+    bgmStarted = true;
+    bgmAudio.play().catch(() => { bgmStarted = false; });
 }
 
 // ============================================================
@@ -194,48 +167,45 @@ function preload() {
     this.load.image('enemy_raw', 'enemy_sheet.jpg');
 }
 
-function chromaKeyTexture(scene, srcKey, destKey, keyColor, tol) {
-    const src = scene.textures.get(srcKey).getSourceImage();
-    const c = document.createElement('canvas');
-    c.width = src.width; c.height = src.height;
-    const ctx = c.getContext('2d');
-    ctx.drawImage(src, 0, 0);
-    const imgData = ctx.getImageData(0, 0, c.width, c.height);
-    const d = imgData.data;
-    for (let i = 0; i < d.length; i += 4) {
-        const dr = Math.abs(d[i] - keyColor.r);
-        const dg = Math.abs(d[i + 1] - keyColor.g);
-        const db = Math.abs(d[i + 2] - keyColor.b);
-        if (dr < tol && dg < tol && db < tol) d[i + 3] = 0;
-    }
-    ctx.putImageData(imgData, 0, 0);
-    scene.textures.addCanvas(destKey, c);
-}
-
-function sliceSpriteSheet(scene, sheetKey, prefix) {
-    const src = scene.textures.get(sheetKey).getSourceImage();
-    const fw = Math.floor(src.width / SHEET_COLS);
-    const fh = Math.floor(src.height / SHEET_ROWS);
+// Process sprite sheet: chroma key + slice in one pass
+// Returns { fw, fh } — dynamic frame dimensions from actual image
+function processAndSliceSheet(scene, rawKey, prefix, keyColor, tol) {
+    const src = scene.textures.get(rawKey).getSourceImage();
+    const fw = Math.floor(src.width / SHEET_COLS);   // dynamic from image width
+    const fh = Math.floor(src.height / SHEET_ROWS);  // dynamic from image height
     for (let row = 0; row < SHEET_ROWS; row++) {
         for (let col = 0; col < SHEET_COLS; col++) {
             const idx = row * SHEET_COLS + col;
             const c = document.createElement('canvas');
             c.width = fw; c.height = fh;
             const ctx = c.getContext('2d');
+            // Extract exactly one frame — margin:0, spacing:0
             ctx.drawImage(src, col * fw, row * fh, fw, fh, 0, 0, fw, fh);
+            // Chroma key on this single frame
+            const imgData = ctx.getImageData(0, 0, fw, fh);
+            const d = imgData.data;
+            for (let i = 0; i < d.length; i += 4) {
+                if (Math.abs(d[i] - keyColor.r) < tol &&
+                    Math.abs(d[i + 1] - keyColor.g) < tol &&
+                    Math.abs(d[i + 2] - keyColor.b) < tol) {
+                    d[i + 3] = 0;
+                }
+            }
+            ctx.putImageData(imgData, 0, 0);
             scene.textures.addCanvas(prefix + idx, c);
         }
     }
+    return { fw, fh };
 }
 
 function create() {
     gameScene = this;
 
-    // Process sprite sheets
-    chromaKeyTexture(this, 'samurai_raw', 'samurai_clean', { r: 0, g: 0, b: 0 }, 15);
-    sliceSpriteSheet(this, 'samurai_clean', 'sam_f');
-    chromaKeyTexture(this, 'enemy_raw', 'enemy_clean', { r: 8, g: 8, b: 8 }, 18);
-    sliceSpriteSheet(this, 'enemy_clean', 'oni_f');
+    // Process sprite sheets — dynamic frame dimensions from actual image size
+    processAndSliceSheet(this, 'samurai_raw', 'sam_f', { r: 0, g: 0, b: 0 }, 15);
+    const oniDims = processAndSliceSheet(this, 'enemy_raw', 'oni_f', { r: 8, g: 8, b: 8 }, 22);
+    oniFW = oniDims.fw;
+    oniFH = oniDims.fh;
 
     // --- BACKGROUND ---
     drawBackground(this);
@@ -310,17 +280,18 @@ function create() {
     };
     this.input.on('pointerdown', (p) => {
         if (p.leftButtonDown()) triggerAttack();
-        // Unlock Web Audio on first click
-        if (!audioCtx) { initWebAudio(); startBGM(); }
+        // Unlock audio on first click
+        if (!audioCtx) initAudio();
+        startBGM();
     });
 
     // --- HUD ---
     createHUD(this);
 
-    // --- AUDIO (Web Audio API) ---
-    initWebAudio();
+    // --- AUDIO (CDN + Web Audio) ---
+    initAudio();
     // BGM starts on first user interaction (browser policy)
-    this.input.keyboard.on('keydown', () => { if (audioCtx && !bgmNodes) startBGM(); });
+    this.input.keyboard.on('keydown', () => { startBGM(); });
 }
 
 // ============================================================
@@ -341,7 +312,7 @@ function makePlatform(scene, x, y, w, h, type) {
     }
     g.generateTexture(key, w, h); g.destroy();
     const plat = platforms.create(x, y, key);
-    plat.setAlpha(type === 'ground' ? 0.6 : 0.35);
+    plat.setAlpha(0.5);
     plat.body.setSize(w - 4, h - 2).setOffset(2, 1);
     plat.refreshBody();
 }
@@ -394,7 +365,12 @@ function updateHUD() {
 function spawnOni(scene, x, y) {
     const sprite = scene.physics.add.sprite(x, y, 'oni_f0');
     sprite.setScale(ONI.scale).setDepth(10).setBounce(0).setCollideWorldBounds(true);
-    sprite.body.setSize(ONI.bodyW, ONI.bodyH).setOffset(ONI.bodyOX, ONI.bodyOY);
+    // Dynamic body from actual frame dimensions — centered, 30% width, 55% height
+    const bw = Math.floor(oniFW * 0.30);
+    const bh = Math.floor(oniFH * 0.55);
+    const bx = Math.floor((oniFW - bw) / 2);
+    const by = Math.floor(oniFH * 0.30);
+    sprite.body.setSize(bw, bh).setOffset(bx, by);
     sprite.body.setMaxVelocityY(900);
 
     const enemy = {
