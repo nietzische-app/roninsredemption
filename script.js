@@ -1,7 +1,7 @@
 // ============================================================
 //  RONIN'S REDEMPTION — OOP Enemy System + 4 Enemy Types
-//  Player: samurai_sheet.jpg (4x3, 12 frames)
-//  Enemies: 4x4 grids (16 frames each)
+//  Player: samurai_sheet.jpg (3x3, 9 frames, WHITE bg)
+//  Enemies: 4x4 grids (16 frames, WHITE bg)
 //    - Oni (enemy_sheet.jpg)
 //    - Archer (enemy__archer.jpg)
 //    - Shield (enemy_shield.jpg)
@@ -39,14 +39,15 @@ let audioCtx = null;
 let slashAudio = null, bgmAudio = null;
 
 // ===================== HUD =====================
-let hpBarBg, hpBarFill, hpBarBorder, hpText;
+let hpBarGfx, hpText;
 
-// ===================== PLAYER SPRITE SHEET =====================
-const PLAYER_COLS = 4, PLAYER_ROWS = 3;
+// ===================== SPRITE SHEET GRID =====================
+// Samurai = 3 cols x 3 rows = 9 frames
+const PLAYER_COLS = 3, PLAYER_ROWS = 3;
+// All enemies = 4 cols x 4 rows = 16 frames
 const ENEMY_COLS = 4, ENEMY_ROWS = 4;
 
-const CHAR_SCALE = 0.32;
-const BODY_W = 100, BODY_H = 200, BODY_OX = 78, BODY_OY = 80;
+const CHAR_SCALE = 0.35;
 
 // ===================== TUNING =====================
 const maxJumps = 2;
@@ -65,7 +66,7 @@ const ATTACKS = [
 ];
 
 // ============================================================
-//  AUDIO — CDN sounds + Web Audio fallback
+//  AUDIO — CDN + Web Audio
 // ============================================================
 function initAudio() {
     try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {}
@@ -74,52 +75,51 @@ function initAudio() {
     bgmAudio = new Audio('https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3');
     bgmAudio.volume = 0.12; bgmAudio.loop = true; bgmAudio.load();
 }
-function playSlashSound() {
-    if (slashAudio) { const s = slashAudio.cloneNode(); s.volume = 0.35 + Math.random() * 0.15; s.play().catch(() => {}); }
-}
+function playSlashSound() { if (slashAudio) { const s = slashAudio.cloneNode(); s.volume = 0.35 + Math.random() * 0.15; s.play().catch(() => {}); } }
 function playHitSound() {
     if (!audioCtx) return; const t = audioCtx.currentTime;
     const osc = audioCtx.createOscillator(); osc.type = 'sine'; osc.frequency.setValueAtTime(150, t); osc.frequency.exponentialRampToValueAtTime(40, t + 0.15);
-    const gain = audioCtx.createGain(); gain.gain.setValueAtTime(0.4, t); gain.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
-    osc.connect(gain).connect(audioCtx.destination); osc.start(t); osc.stop(t + 0.15);
+    const g = audioCtx.createGain(); g.gain.setValueAtTime(0.4, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
+    osc.connect(g).connect(audioCtx.destination); osc.start(t); osc.stop(t + 0.15);
 }
 function playHurtSound() {
     if (!audioCtx) return; const t = audioCtx.currentTime;
     const osc = audioCtx.createOscillator(); osc.type = 'sawtooth'; osc.frequency.setValueAtTime(400, t); osc.frequency.exponentialRampToValueAtTime(100, t + 0.25);
-    const gain = audioCtx.createGain(); gain.gain.setValueAtTime(0.15, t); gain.gain.exponentialRampToValueAtTime(0.001, t + 0.25);
-    osc.connect(gain).connect(audioCtx.destination); osc.start(t); osc.stop(t + 0.25);
+    const g = audioCtx.createGain(); g.gain.setValueAtTime(0.15, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.25);
+    osc.connect(g).connect(audioCtx.destination); osc.start(t); osc.stop(t + 0.25);
 }
 function playDashSound() {
     if (!audioCtx) return; const t = audioCtx.currentTime; const dur = 0.1;
     const buf = audioCtx.createBuffer(1, audioCtx.sampleRate * dur, audioCtx.sampleRate); const data = buf.getChannelData(0);
-    for (let i = 0; i < data.length; i++) { data[i] = (Math.random() * 2 - 1) * Math.sin((i / data.length) * Math.PI) * 0.8; }
+    for (let i = 0; i < data.length; i++) data[i] = (Math.random() * 2 - 1) * Math.sin((i / data.length) * Math.PI) * 0.8;
     const src = audioCtx.createBufferSource(); src.buffer = buf;
     const bp = audioCtx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 1500; bp.Q.value = 0.5;
-    const gain = audioCtx.createGain(); gain.gain.setValueAtTime(0.2, t);
-    src.connect(bp).connect(gain).connect(audioCtx.destination); src.start(t); src.stop(t + dur);
+    const g = audioCtx.createGain(); g.gain.setValueAtTime(0.2, t);
+    src.connect(bp).connect(g).connect(audioCtx.destination); src.start(t); src.stop(t + dur);
 }
 function playBlockSound() {
     if (!audioCtx) return; const t = audioCtx.currentTime;
     const osc = audioCtx.createOscillator(); osc.type = 'square'; osc.frequency.setValueAtTime(800, t); osc.frequency.exponentialRampToValueAtTime(200, t + 0.08);
-    const gain = audioCtx.createGain(); gain.gain.setValueAtTime(0.25, t); gain.gain.exponentialRampToValueAtTime(0.001, t + 0.1);
-    osc.connect(gain).connect(audioCtx.destination); osc.start(t); osc.stop(t + 0.1);
+    const g = audioCtx.createGain(); g.gain.setValueAtTime(0.25, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.1);
+    osc.connect(g).connect(audioCtx.destination); osc.start(t); osc.stop(t + 0.1);
 }
 function playArrowSound() {
     if (!audioCtx) return; const t = audioCtx.currentTime; const dur = 0.15;
     const buf = audioCtx.createBuffer(1, audioCtx.sampleRate * dur, audioCtx.sampleRate); const data = buf.getChannelData(0);
-    for (let i = 0; i < data.length; i++) { const env = 1 - (i / data.length); data[i] = (Math.random() * 2 - 1) * env * 0.3; }
+    for (let i = 0; i < data.length; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / data.length) * 0.3;
     const src = audioCtx.createBufferSource(); src.buffer = buf;
     const hp = audioCtx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 4000;
-    const gain = audioCtx.createGain(); gain.gain.setValueAtTime(0.2, t);
-    src.connect(hp).connect(gain).connect(audioCtx.destination); src.start(t); src.stop(t + dur);
+    const g = audioCtx.createGain(); g.gain.setValueAtTime(0.2, t);
+    src.connect(hp).connect(g).connect(audioCtx.destination); src.start(t); src.stop(t + dur);
 }
 let bgmStarted = false;
 function startBGM() { if (bgmStarted || !bgmAudio) return; bgmStarted = true; bgmAudio.play().catch(() => { bgmStarted = false; }); }
 
 // ============================================================
-//  SPRITE SHEET PROCESSING
+//  SPRITE SHEET — Slice + White Background Removal
+//  JPG sheets have WHITE (255,255,255) background
 // ============================================================
-function processAndSliceSheet(scene, rawKey, prefix, keyColor, tol, cols, rows) {
+function processAndSliceSheet(scene, rawKey, prefix, bgColor, tolerance, cols, rows) {
     const src = scene.textures.get(rawKey).getSourceImage();
     const fw = Math.floor(src.width / cols);
     const fh = Math.floor(src.height / rows);
@@ -130,10 +130,15 @@ function processAndSliceSheet(scene, rawKey, prefix, keyColor, tol, cols, rows) 
             c.width = fw; c.height = fh;
             const ctx = c.getContext('2d');
             ctx.drawImage(src, col * fw, row * fh, fw, fh, 0, 0, fw, fh);
+            // Remove background color (white for JPG sheets)
             const imgData = ctx.getImageData(0, 0, fw, fh);
             const d = imgData.data;
             for (let i = 0; i < d.length; i += 4) {
-                if (Math.abs(d[i] - keyColor.r) < tol && Math.abs(d[i+1] - keyColor.g) < tol && Math.abs(d[i+2] - keyColor.b) < tol) d[i+3] = 0;
+                if (Math.abs(d[i] - bgColor.r) < tolerance &&
+                    Math.abs(d[i+1] - bgColor.g) < tolerance &&
+                    Math.abs(d[i+2] - bgColor.b) < tolerance) {
+                    d[i+3] = 0; // make transparent
+                }
             }
             ctx.putImageData(imgData, 0, 0);
             scene.textures.addCanvas(prefix + idx, c);
@@ -154,19 +159,22 @@ function preload() {
     this.load.image('assassin_raw', 'enemy_assasin.jpg');
 }
 
+// WHITE background color for all JPG sheets
+const WHITE_BG = { r: 255, g: 255, b: 255 };
+
 function create() {
     gameScene = this;
 
-    // --- Process player sheet (4x3) ---
-    processAndSliceSheet(this, 'samurai_raw', 'sam_f', { r: 0, g: 0, b: 0 }, 15, PLAYER_COLS, PLAYER_ROWS);
+    // --- Process samurai sheet (3x3 = 9 frames, WHITE bg) ---
+    const samDims = processAndSliceSheet(this, 'samurai_raw', 'sam_f', WHITE_BG, 35, PLAYER_COLS, PLAYER_ROWS);
 
-    // --- Process enemy sheets (4x4 each) ---
-    const oniDims = processAndSliceSheet(this, 'oni_raw', 'oni_f', { r: 8, g: 8, b: 8 }, 22, ENEMY_COLS, ENEMY_ROWS);
-    const archerDims = processAndSliceSheet(this, 'archer_raw', 'archer_f', { r: 0, g: 0, b: 0 }, 20, ENEMY_COLS, ENEMY_ROWS);
-    const shieldDims = processAndSliceSheet(this, 'shield_raw', 'shield_f', { r: 0, g: 0, b: 0 }, 20, ENEMY_COLS, ENEMY_ROWS);
-    const assassinDims = processAndSliceSheet(this, 'assassin_raw', 'assassin_f', { r: 0, g: 0, b: 0 }, 20, ENEMY_COLS, ENEMY_ROWS);
+    // --- Process enemy sheets (4x4 = 16 frames, WHITE bg) ---
+    const oniDims = processAndSliceSheet(this, 'oni_raw', 'oni_f', WHITE_BG, 35, ENEMY_COLS, ENEMY_ROWS);
+    const archerDims = processAndSliceSheet(this, 'archer_raw', 'archer_f', WHITE_BG, 35, ENEMY_COLS, ENEMY_ROWS);
+    const shieldDims = processAndSliceSheet(this, 'shield_raw', 'shield_f', WHITE_BG, 35, ENEMY_COLS, ENEMY_ROWS);
+    const assassinDims = processAndSliceSheet(this, 'assassin_raw', 'assassin_f', WHITE_BG, 35, ENEMY_COLS, ENEMY_ROWS);
 
-    // Store dims on config
+    // Store dims on classes
     EnemyOni.dims = oniDims;
     EnemyArcher.dims = archerDims;
     EnemyShield.dims = shieldDims;
@@ -175,7 +183,7 @@ function create() {
     // --- BACKGROUND ---
     drawBackground(this);
 
-    // --- PLATFORMS (semi-transparent, alpha 0.5) ---
+    // --- PLATFORMS (alpha 0.5) ---
     platforms = this.physics.add.staticGroup();
     makePlatform(this, 640, 694, 1280, 32, 'ground');
     makePlatform(this, 200, 560, 180, 14, 'wood');
@@ -194,10 +202,15 @@ function create() {
     makeWall(this, 1264, 360, 24, 720);
     makeWall(this, 640, 590, 18, 220);
 
-    // --- PLAYER ---
+    // --- PLAYER (dynamic body from samurai frame dims) ---
     player = this.physics.add.sprite(640, 600, 'sam_f0');
     player.setScale(CHAR_SCALE).setBounce(0).setCollideWorldBounds(true).setDepth(10);
-    player.body.setSize(BODY_W, BODY_H).setOffset(BODY_OX, BODY_OY);
+    // Body: 30% width centered, 55% height from 25% down
+    const pBw = Math.floor(samDims.fw * 0.30);
+    const pBh = Math.floor(samDims.fh * 0.55);
+    const pBx = Math.floor((samDims.fw - pBw) / 2);
+    const pBy = Math.floor(samDims.fh * 0.25);
+    player.body.setSize(pBw, pBh).setOffset(pBx, pBy);
     player.body.setMaxVelocityY(900);
     player.animFrame = 0; player.animTimer = 0; player.currentAnim = 'idle';
 
@@ -211,7 +224,7 @@ function create() {
     this.textures.addCanvas('glow', gc);
     playerGlow = this.add.image(player.x, player.y, 'glow').setDepth(9).setBlendMode(Phaser.BlendModes.ADD);
 
-    // --- SPAWN ENEMIES (each type at different locations) ---
+    // --- SPAWN ENEMIES ---
     enemies.push(new EnemyOni(this, 900, 640));
     enemies.push(new EnemyOni(this, 350, 640));
     enemies.push(new EnemyArcher(this, 1060, 380));
@@ -273,7 +286,6 @@ class Enemy {
         this.animName = 'idle';
         this.animFrame = 0;
         this.animTimer = 0;
-        this.type = config.type || 'enemy';
 
         // Sprite
         this.sprite = scene.physics.add.sprite(x, y, config.prefix + '0');
@@ -288,14 +300,41 @@ class Enemy {
         const by = Math.floor(dims.fh * config.bodyYOffset);
         this.sprite.body.setSize(bw, bh).setOffset(bx, by);
 
-        // HP Bar
-        this.hpBg = scene.add.rectangle(x, y - 40, 40, 6, 0x220000, 0.8).setDepth(20);
-        this.hpFill = scene.add.rectangle(x, y - 40, 38, 4, config.hpColor || 0xcc2222, 1).setDepth(21);
-
-        // Type label
-        this.typeLabel = scene.add.text(x, y - 50, config.label || '', {
+        // Stylish HP bar (drawn with graphics)
+        this.hpGfx = scene.add.graphics().setDepth(22);
+        this.typeLabel = scene.add.text(x, y - 52, config.label || '', {
             fontFamily: 'monospace', fontSize: '7px', color: config.labelColor || '#ff6644'
-        }).setOrigin(0.5).setDepth(22).setAlpha(0.7);
+        }).setOrigin(0.5).setDepth(23).setAlpha(0.8);
+    }
+
+    drawHP() {
+        const s = this.sprite;
+        const g = this.hpGfx;
+        g.clear();
+        const bx = s.x - 22, by = s.y - 46;
+        const bw = 44, bh = 6;
+        const ratio = Math.max(0, this.hp / this.maxHp);
+        const fillW = Math.floor((bw - 2) * ratio);
+
+        // Background (dark)
+        g.fillStyle(0x111111, 0.7);
+        g.fillRoundedRect(bx, by, bw, bh, 3);
+        // Border
+        g.lineStyle(1, this.config.hpBorderColor || 0x444466, 0.8);
+        g.strokeRoundedRect(bx, by, bw, bh, 3);
+        // Fill — gradient green→yellow→red
+        if (fillW > 0) {
+            let color;
+            if (ratio > 0.6) color = this.config.hpColor || 0x22cc44;
+            else if (ratio > 0.3) color = 0xcccc22;
+            else color = 0xcc2222;
+            g.fillStyle(color, 0.9);
+            g.fillRoundedRect(bx + 1, by + 1, fillW, bh - 2, 2);
+            // Shine line on top
+            g.lineStyle(1, 0xffffff, 0.2);
+            g.lineBetween(bx + 3, by + 2, bx + 1 + fillW - 2, by + 2);
+        }
+        this.typeLabel.setPosition(s.x, s.y - 54);
     }
 
     playAnim(name) {
@@ -317,26 +356,15 @@ class Enemy {
         }
     }
 
-    updateHPBar() {
-        const s = this.sprite;
-        this.hpBg.setPosition(s.x, s.y - 44);
-        this.hpFill.setPosition(s.x, s.y - 44);
-        const ratio = Math.max(0, this.hp / this.maxHp);
-        this.hpFill.setDisplaySize(38 * ratio, 4);
-        this.typeLabel.setPosition(s.x, s.y - 52);
-    }
-
     takeDamage(dmg, dir) {
         if (this.dead) return;
         this.hp -= dmg; this.hurtTimer = 200;
         this.sprite.body.setVelocityX(dir * 300); this.sprite.body.setVelocityY(-100);
         playHitSound();
-        // Damage number
         const txt = gameScene.add.text(this.sprite.x, this.sprite.y - 30, '-' + dmg, {
             fontFamily: 'monospace', fontSize: '14px', color: '#ff4444', fontStyle: 'bold'
         }).setOrigin(0.5).setDepth(30);
         gameScene.tweens.add({ targets: txt, y: txt.y - 30, alpha: 0, duration: 600, ease: 'Power2', onComplete: () => txt.destroy() });
-        // Blood particles
         for (let i = 0; i < 5; i++) {
             const px = this.sprite.x + Phaser.Math.Between(-8, 8), py = this.sprite.y + Phaser.Math.Between(-15, 10);
             const sp = gameScene.add.circle(px, py, Phaser.Math.Between(1, 3), 0xff4422, 0.9).setDepth(15);
@@ -345,16 +373,13 @@ class Enemy {
         if (this.hp <= 0) this.die();
     }
 
-    // Can be overridden — Shield blocks from front
     canTakeDamage(attackDir) { return true; }
 
     die() {
         this.dead = true; this.sprite.body.enable = false;
         const s = this.sprite;
-        // Flash
         const fl = gameScene.add.circle(s.x, s.y, 30, 0xff2200, 0.5).setDepth(15);
         gameScene.tweens.add({ targets: fl, scaleX: 2.5, scaleY: 2.5, alpha: 0, duration: 300, onComplete: () => fl.destroy() });
-        // Debris
         for (let i = 0; i < 12; i++) {
             const a = Phaser.Math.DegToRad(Phaser.Math.Between(0, 360)), r = Phaser.Math.Between(5, 15);
             const px = s.x + Math.cos(a) * r, py = s.y + Math.sin(a) * r;
@@ -363,14 +388,11 @@ class Enemy {
             gameScene.tweens.add({ targets: sp, x: px + Math.cos(a) * Phaser.Math.Between(30, 80), y: py + Math.sin(a) * Phaser.Math.Between(30, 80) - 20,
                 alpha: 0, rotation: Phaser.Math.Between(-3, 3), duration: Phaser.Math.Between(300, 600), onComplete: () => sp.destroy() });
         }
-        // Fade out
         gameScene.tweens.add({ targets: s, alpha: 0, scaleX: 0, scaleY: 0, duration: 400, ease: 'Power3',
-            onComplete: () => { s.destroy(); this.hpBg.destroy(); this.hpFill.destroy(); this.typeLabel.destroy(); }
+            onComplete: () => { s.destroy(); this.hpGfx.destroy(); this.typeLabel.destroy(); }
         });
-        // SLAIN text
         const kt = gameScene.add.text(s.x, s.y - 40, 'SLAIN', { fontFamily: 'monospace', fontSize: '12px', color: '#ff6644', fontStyle: 'bold' }).setOrigin(0.5).setDepth(30);
         gameScene.tweens.add({ targets: kt, y: kt.y - 30, alpha: 0, duration: 1000, onComplete: () => kt.destroy() });
-        // Respawn after 6s
         gameScene.time.delayedCall(6000, () => { this.respawn(); });
     }
 
@@ -400,7 +422,6 @@ class Enemy {
             gameScene.time.delayedCall(200, () => { if (playerHurtTimer > 0) player.setAlpha(0.6); });
             gameScene.cameras.main.shake(80, 0.005);
             updateHUD();
-            // Blood splatter
             for (let i = 0; i < 6; i++) {
                 const px = player.x + Phaser.Math.Between(-10, 10), py = player.y + Phaser.Math.Between(-15, 15);
                 const sp = gameScene.add.circle(px, py, 2, 0xff2222, 0.8).setDepth(15);
@@ -414,46 +435,37 @@ class Enemy {
         if (this.dead) return;
         const s = this.sprite;
         if (!s || !s.body) return;
-
-        // Hurt state
         if (this.hurtTimer > 0) {
             this.hurtTimer -= delta;
             s.setTint(this.hurtTimer % 100 > 50 ? 0xffffff : 0xff4444);
-            this.updateHPBar(); this.updateAnim(delta);
+            this.drawHP(); this.updateAnim(delta);
             return;
         }
         s.clearTint();
         if (this.attackCd > 0) this.attackCd -= delta;
-
-        // Direction to player
         const dx = player.x - s.x;
         this.facingRight = dx > 0;
         s.setFlipX(!this.facingRight);
-
-        // Subclass AI
         this.updateAI(delta);
-
         this.updateAnim(delta);
-        this.updateHPBar();
+        this.drawHP();
     }
 
-    // Override in subclasses
     updateAI(delta) {}
 }
 
 // ============================================================
-//  ONI — Melee Berserker (slow, high damage)
+//  ONI — Melee Berserker
 // ============================================================
 class EnemyOni extends Enemy {
     static dims = { fw: 256, fh: 256 };
-
     constructor(scene, x, y) {
         super(scene, x, y, {
-            type: 'oni', prefix: 'oni_f', label: 'ONI', labelColor: '#ff4444',
+            type: 'oni', prefix: 'oni_f', label: 'ONI', labelColor: '#cc66ff',
             hp: 120, scale: 0.28, attackDmg: 18, knockback: 280,
             speed: 110, chaseRange: 300, attackRange: 55,
             attackDur: 550, attackCooldown: 1300,
-            hpColor: 0xcc2222,
+            hpColor: 0xcc66ff, hpBorderColor: 0x6633aa,
             bodyWRatio: 0.30, bodyHRatio: 0.50, bodyYOffset: 0.30,
             dims: EnemyOni.dims,
             anims: {
@@ -464,15 +476,12 @@ class EnemyOni extends Enemy {
             }
         });
     }
-
     updateAI(delta) {
         const s = this.sprite;
         const dx = player.x - s.x, dy = player.y - s.y;
         const dist = Math.sqrt(dx * dx + dy * dy);
-
         if (this.state === 'attack') {
-            this.attackTimer -= delta;
-            this.playAnim('attack');
+            this.attackTimer -= delta; this.playAnim('attack');
             if (this.attackTimer < this.config.attackDur * 0.3) {
                 s.setTint(0xff6644);
                 if (this.attackTimer < this.config.attackDur * 0.25 && this.attackTimer > this.config.attackDur * 0.15) this.checkHitPlayer();
@@ -496,14 +505,13 @@ class EnemyOni extends Enemy {
 // ============================================================
 class EnemyArcher extends Enemy {
     static dims = { fw: 256, fh: 256 };
-
     constructor(scene, x, y) {
         super(scene, x, y, {
             type: 'archer', prefix: 'archer_f', label: 'ARCHER', labelColor: '#44cc44',
             hp: 70, scale: 0.26, attackDmg: 10, knockback: 200,
             speed: 130, chaseRange: 400, attackRange: 250, fleeRange: 100,
             attackDur: 600, attackCooldown: 1800,
-            hpColor: 0x44cc44,
+            hpColor: 0x44cc44, hpBorderColor: 0x226622,
             bodyWRatio: 0.28, bodyHRatio: 0.50, bodyYOffset: 0.30,
             dims: EnemyArcher.dims,
             anims: {
@@ -513,72 +521,53 @@ class EnemyArcher extends Enemy {
                 flee:   { frames: [12, 13, 14, 15], fps: 10, loop: true }
             }
         });
-        this.shootTimer = 0;
     }
-
     updateAI(delta) {
         const s = this.sprite;
         const dx = player.x - s.x, dy = player.y - s.y;
         const dist = Math.sqrt(dx * dx + dy * dy);
-
-        // Too close → flee (kiting)
         if (dist < this.config.fleeRange) {
             this.state = 'flee'; this.playAnim('flee');
             s.body.setVelocityX((dx > 0 ? -1 : 1) * this.config.speed * 1.3);
-        }
-        // In shooting range → shoot
-        else if (dist < this.config.attackRange && this.attackCd <= 0) {
-            this.state = 'shoot';
-            this.playAnim('shoot');
+        } else if (dist < this.config.attackRange && this.attackCd <= 0) {
+            this.state = 'shoot'; this.playAnim('shoot');
             s.body.setVelocityX(0);
             this.attackCd = this.config.attackCooldown;
-            // Fire arrow after short delay
-            gameScene.time.delayedCall(300, () => {
-                if (!this.dead) this.fireArrow();
-            });
-        }
-        // In chase range but too far to shoot
-        else if (dist < this.config.chaseRange && dist > this.config.attackRange * 0.8) {
+            gameScene.time.delayedCall(300, () => { if (!this.dead) this.fireArrow(); });
+        } else if (dist < this.config.chaseRange && dist > this.config.attackRange * 0.8) {
             this.state = 'chase'; this.playAnim('walk');
             s.body.setVelocityX((dx > 0 ? 1 : -1) * this.config.speed * 0.7);
-        }
-        // Idle
-        else {
+        } else {
             this.state = 'idle'; this.playAnim('idle');
             s.body.setVelocityX(0);
         }
     }
-
     fireArrow() {
         playArrowSound();
         const dir = this.facingRight ? 1 : -1;
         const ax = this.sprite.x + dir * 20, ay = this.sprite.y - 5;
-        // Arrow graphics
         const arrow = gameScene.add.graphics().setDepth(15);
         arrow.lineStyle(2, 0x88ff88, 1);
         arrow.lineBetween(0, 0, dir * 18, 0);
         arrow.fillStyle(0xffffff, 1);
         arrow.fillTriangle(dir * 18, -3, dir * 18, 3, dir * 24, 0);
         arrow.setPosition(ax, ay);
-        // Arrow physics
-        const arrowObj = { gfx: arrow, x: ax, y: ay, vx: dir * 450, vy: 0, life: 2000, dmg: this.config.attackDmg };
-        projectiles.push(arrowObj);
+        projectiles.push({ gfx: arrow, x: ax, y: ay, vx: dir * 450, vy: 0, life: 2000, dmg: this.config.attackDmg });
     }
 }
 
 // ============================================================
-//  SHIELD — Tank, only hittable from behind
+//  SHIELD — Tank, blocks frontal attacks
 // ============================================================
 class EnemyShield extends Enemy {
     static dims = { fw: 256, fh: 256 };
-
     constructor(scene, x, y) {
         super(scene, x, y, {
-            type: 'shield', prefix: 'shield_f', label: 'SHIELD', labelColor: '#4488ff',
+            type: 'shield', prefix: 'shield_f', label: 'SHIELD', labelColor: '#ff6644',
             hp: 200, scale: 0.30, attackDmg: 20, knockback: 350,
             speed: 55, chaseRange: 250, attackRange: 50,
             attackDur: 700, attackCooldown: 2000,
-            hpColor: 0x4488ff,
+            hpColor: 0xcc4422, hpBorderColor: 0x662211,
             bodyWRatio: 0.35, bodyHRatio: 0.55, bodyYOffset: 0.28,
             dims: EnemyShield.dims,
             anims: {
@@ -588,55 +577,39 @@ class EnemyShield extends Enemy {
                 stagger:{ frames: [12, 13, 14, 15], fps: 8, loop: false }
             }
         });
-        this.blockFlash = null;
     }
-
     canTakeDamage(attackDir) {
-        // attackDir is +1 (hit from right) or -1 (hit from left)
-        // Shield blocks if player is in front (same side enemy is facing)
         const playerOnRight = player.x > this.sprite.x;
-        const enemyFacingRight = this.facingRight;
-        // Block: player attacks from the front = direction enemy faces
-        if ((enemyFacingRight && playerOnRight) || (!enemyFacingRight && !playerOnRight)) {
-            // BLOCKED!
-            this.showBlock();
-            return false;
+        const facing = this.facingRight;
+        if ((facing && playerOnRight) || (!facing && !playerOnRight)) {
+            this.showBlock(); return false;
         }
-        return true; // Hit from behind — takes damage
+        return true;
     }
-
     showBlock() {
         playBlockSound();
-        const s = this.sprite;
         this.playAnim('block');
-        // Block spark
-        const dir = this.facingRight ? 1 : -1;
+        const s = this.sprite, dir = this.facingRight ? 1 : -1;
         const bx = s.x + dir * 25, by = s.y - 10;
         for (let i = 0; i < 6; i++) {
             const px = bx + Phaser.Math.Between(-5, 5), py = by + Phaser.Math.Between(-10, 10);
-            const sp = gameScene.add.circle(px, py, 2, 0x4488ff, 1).setDepth(16);
+            const sp = gameScene.add.circle(px, py, 2, 0xff6644, 1).setDepth(16);
             gameScene.tweens.add({ targets: sp, x: px + Phaser.Math.Between(-20, 20), y: py + Phaser.Math.Between(-20, 5), alpha: 0, duration: 200, onComplete: () => sp.destroy() });
         }
-        // BLOCKED text
         const bt = gameScene.add.text(s.x, s.y - 40, 'BLOCKED!', {
-            fontFamily: 'monospace', fontSize: '10px', color: '#4488ff', fontStyle: 'bold'
+            fontFamily: 'monospace', fontSize: '10px', color: '#ff6644', fontStyle: 'bold'
         }).setOrigin(0.5).setDepth(30);
         gameScene.tweens.add({ targets: bt, y: bt.y - 20, alpha: 0, duration: 600, onComplete: () => bt.destroy() });
-        // Knockback player
-        const kbDir = player.x > s.x ? 1 : -1;
-        player.body.setVelocityX(kbDir * 200);
+        player.body.setVelocityX((player.x > s.x ? 1 : -1) * 200);
     }
-
     updateAI(delta) {
         const s = this.sprite;
         const dx = player.x - s.x, dy = player.y - s.y;
         const dist = Math.sqrt(dx * dx + dy * dy);
-
         if (this.state === 'attack') {
-            this.attackTimer -= delta;
-            this.playAnim('block'); // Uses block anim for heavy attack
+            this.attackTimer -= delta; this.playAnim('block');
             if (this.attackTimer < this.config.attackDur * 0.3) {
-                s.setTint(0x4488ff);
+                s.setTint(0xff6644);
                 if (this.attackTimer < this.config.attackDur * 0.25 && this.attackTimer > this.config.attackDur * 0.15) this.checkHitPlayer();
             }
             if (this.attackTimer <= 0) { this.state = 'idle'; this.attackCd = this.config.attackCooldown; s.clearTint(); }
@@ -654,18 +627,17 @@ class EnemyShield extends Enemy {
 }
 
 // ============================================================
-//  ASSASSIN — Fast, goes invisible at low HP
+//  ASSASSIN — Fast, invisible at low HP
 // ============================================================
 class EnemyAssassin extends Enemy {
     static dims = { fw: 256, fh: 256 };
-
     constructor(scene, x, y) {
         super(scene, x, y, {
-            type: 'assassin', prefix: 'assassin_f', label: 'ASSASSIN', labelColor: '#cc44cc',
+            type: 'assassin', prefix: 'assassin_f', label: 'ASSASSIN', labelColor: '#44ddcc',
             hp: 80, scale: 0.25, attackDmg: 22, knockback: 200,
             speed: 220, chaseRange: 350, attackRange: 45,
             attackDur: 350, attackCooldown: 900,
-            hpColor: 0xcc44cc,
+            hpColor: 0x44ddcc, hpBorderColor: 0x226655,
             bodyWRatio: 0.26, bodyHRatio: 0.50, bodyYOffset: 0.30,
             dims: EnemyAssassin.dims,
             anims: {
@@ -678,38 +650,27 @@ class EnemyAssassin extends Enemy {
         this.invisTimer = 0;
         this.isInvisible = false;
     }
-
     updateAI(delta) {
         const s = this.sprite;
         const dx = player.x - s.x, dy = player.y - s.y;
         const dist = Math.sqrt(dx * dx + dy * dy);
-
-        // Invisibility at <50% HP
+        // Go invisible at <50% HP
         if (this.hp < this.maxHp * 0.5 && !this.isInvisible && this.invisTimer <= 0) {
-            this.isInvisible = true;
-            this.invisTimer = 3000; // 3 seconds invisible
-            this.playAnim('vanish');
-            s.setAlpha(0.1);
-            this.typeLabel.setAlpha(0);
-            this.hpBg.setAlpha(0); this.hpFill.setAlpha(0);
+            this.isInvisible = true; this.invisTimer = 3000;
+            this.playAnim('vanish'); s.setAlpha(0.1);
+            this.typeLabel.setAlpha(0); this.hpGfx.setAlpha(0);
         }
-
         if (this.isInvisible) {
             this.invisTimer -= delta;
             if (this.invisTimer <= 0) {
-                this.isInvisible = false;
-                s.setAlpha(1);
-                this.typeLabel.setAlpha(0.7);
-                this.hpBg.setAlpha(0.8); this.hpFill.setAlpha(1);
+                this.isInvisible = false; s.setAlpha(1);
+                this.typeLabel.setAlpha(0.8); this.hpGfx.setAlpha(1);
             }
         }
-
-        // Attack
         if (this.state === 'attack') {
-            this.attackTimer -= delta;
-            this.playAnim('attack');
+            this.attackTimer -= delta; this.playAnim('attack');
             if (this.attackTimer < this.config.attackDur * 0.35) {
-                s.setTint(0xcc44cc);
+                s.setTint(0x44ddcc);
                 if (this.attackTimer < this.config.attackDur * 0.3 && this.attackTimer > this.config.attackDur * 0.15) this.checkHitPlayer();
             }
             if (this.attackTimer <= 0) { this.state = 'idle'; this.attackCd = this.config.attackCooldown; s.clearTint(); }
@@ -727,7 +688,7 @@ class EnemyAssassin extends Enemy {
 }
 
 // ============================================================
-//  PROJECTILE SYSTEM (Archer arrows)
+//  PROJECTILE SYSTEM
 // ============================================================
 function updateProjectiles(delta) {
     for (let i = projectiles.length - 1; i >= 0; i--) {
@@ -736,33 +697,22 @@ function updateProjectiles(delta) {
         p.x += p.vx * (delta / 1000);
         p.y += p.vy * (delta / 1000);
         p.gfx.setPosition(p.x, p.y);
-
-        // Hit player?
         if (!isDashing && playerHurtTimer <= 0 && playerHP > 0) {
-            const dx = Math.abs(p.x - player.x), dy = Math.abs(p.y - player.y);
-            if (dx < 20 && dy < 30) {
+            if (Math.abs(p.x - player.x) < 20 && Math.abs(p.y - player.y) < 30) {
                 playerHP -= p.dmg; playerHurtTimer = PLAYER_HURT_IFRAMES;
                 playHurtSound();
-                const kbDir = p.vx > 0 ? 1 : -1;
-                player.body.setVelocityX(kbDir * 150); player.body.setVelocityY(-80);
-                player.setTint(0xff4444);
-                gameScene.cameras.main.shake(60, 0.003);
-                updateHUD();
-                if (playerHP <= 0) playerDeath();
-                p.gfx.destroy(); projectiles.splice(i, 1);
-                continue;
+                player.body.setVelocityX((p.vx > 0 ? 1 : -1) * 150); player.body.setVelocityY(-80);
+                player.setTint(0xff4444); gameScene.cameras.main.shake(60, 0.003);
+                updateHUD(); if (playerHP <= 0) playerDeath();
+                p.gfx.destroy(); projectiles.splice(i, 1); continue;
             }
         }
-
-        // Out of bounds or expired
-        if (p.life <= 0 || p.x < -50 || p.x > W + 50) {
-            p.gfx.destroy(); projectiles.splice(i, 1);
-        }
+        if (p.life <= 0 || p.x < -50 || p.x > W + 50) { p.gfx.destroy(); projectiles.splice(i, 1); }
     }
 }
 
 // ============================================================
-//  PLATFORMS
+//  PLATFORMS (alpha 0.5)
 // ============================================================
 function makePlatform(scene, x, y, w, h, type) {
     const key = 'p_' + x + '_' + y;
@@ -794,7 +744,7 @@ function makeWall(scene, x, y, w, h) {
 }
 
 // ============================================================
-//  HUD
+//  HUD — Stylish Player HP Bar (gradient, rounded)
 // ============================================================
 function createHUD(scene) {
     const z = 1.6;
@@ -805,36 +755,73 @@ function createHUD(scene) {
         fontFamily: 'monospace', fontSize: '13px', color: '#334455', fontStyle: 'bold'
     }).setOrigin(1, 0).setDepth(100).setScrollFactor(0);
 
-    hpBarBg = scene.add.rectangle(16, 32, 152, 14, 0x111122, 0.8).setOrigin(0, 0).setDepth(100).setScrollFactor(0);
-    hpBarFill = scene.add.rectangle(17, 33, 150, 12, 0x22cc44, 1).setOrigin(0, 0).setDepth(101).setScrollFactor(0);
-    hpBarBorder = scene.add.rectangle(16, 32, 152, 14).setOrigin(0, 0).setDepth(102).setScrollFactor(0).setStrokeStyle(1, 0x446655, 0.8).setFillStyle(0, 0);
-    hpText = scene.add.text(92, 33, '100', { fontFamily: 'monospace', fontSize: '9px', color: '#ffffff' }).setOrigin(0.5, 0).setDepth(102).setScrollFactor(0);
+    // Graphics-based HP bar
+    hpBarGfx = scene.add.graphics().setDepth(101).setScrollFactor(0);
+    hpText = scene.add.text(92, 36, '100', {
+        fontFamily: 'monospace', fontSize: '8px', color: '#ffffff'
+    }).setOrigin(0.5, 0.5).setDepth(102).setScrollFactor(0);
 
     scene.comboText = scene.add.text(W / z / 2, H / z - 40, '', { fontFamily: 'monospace', fontSize: '18px', color: '#fff', fontStyle: 'bold' }).setOrigin(0.5).setDepth(100).setAlpha(0).setScrollFactor(0);
     scene.parryText = scene.add.text(W / z / 2, H / z - 65, '', { fontFamily: 'monospace', fontSize: '14px', color: '#00ffaa', fontStyle: 'bold' }).setOrigin(0.5).setDepth(100).setAlpha(0).setScrollFactor(0);
+
+    drawPlayerHP();
 }
 
-function updateHUD() {
+function drawPlayerHP() {
+    const g = hpBarGfx;
+    g.clear();
+    const bx = 16, by = 30, bw = 160, bh = 12;
     const ratio = Math.max(0, playerHP / playerMaxHP);
-    hpBarFill.setDisplaySize(150 * ratio, 12);
-    if (ratio > 0.5) hpBarFill.setFillStyle(0x22cc44, 1);
-    else if (ratio > 0.25) hpBarFill.setFillStyle(0xcccc22, 1);
-    else hpBarFill.setFillStyle(0xcc2222, 1);
-    hpText.setText(Math.ceil(playerHP));
+    const fillW = Math.floor((bw - 4) * ratio);
+
+    // Background — dark rounded
+    g.fillStyle(0x0a0a1a, 0.85);
+    g.fillRoundedRect(bx, by, bw, bh, 6);
+    // Border — subtle glow
+    g.lineStyle(1, 0x334466, 0.7);
+    g.strokeRoundedRect(bx, by, bw, bh, 6);
+
+    // Fill — color shifts green → yellow → red
+    if (fillW > 0) {
+        let fillColor;
+        if (ratio > 0.6) fillColor = 0x22cc55;
+        else if (ratio > 0.3) fillColor = 0xcccc22;
+        else fillColor = 0xcc2222;
+
+        g.fillStyle(fillColor, 0.9);
+        g.fillRoundedRect(bx + 2, by + 2, fillW, bh - 4, 4);
+
+        // Top shine line
+        g.lineStyle(1, 0xffffff, 0.15);
+        g.lineBetween(bx + 6, by + 3, bx + 2 + fillW - 4, by + 3);
+
+        // Bright edge at fill end
+        if (fillW > 8) {
+            g.fillStyle(0xffffff, 0.12);
+            g.fillRoundedRect(bx + 2, by + 2, fillW, (bh - 4) / 2, { tl: 4, tr: 4, bl: 0, br: 0 });
+        }
+    }
+
+    if (hpText) hpText.setText(Math.ceil(playerHP));
 }
+
+function updateHUD() { drawPlayerHP(); }
 
 // ============================================================
-//  PLAYER ANIMATION
+//  PLAYER ANIMATION — 3x3 grid (9 frames)
+//  Row 0 (0,1,2): Idle/stance
+//  Row 1 (3,4,5): Ready/run
+//  Row 2 (6,7,8): Attack/slash
 // ============================================================
 const ANIMS = {
-    idle: { frames: [0, 1, 2, 3], fps: 6, loop: true },
-    run: { frames: [4, 5, 6, 7], fps: 10, loop: true },
-    attack: { frames: [8, 9, 10, 11], fps: 12, loop: false },
-    jump: { frames: [4], fps: 1, loop: false },
-    fall: { frames: [5], fps: 1, loop: false },
-    wallslide: { frames: [6], fps: 1, loop: false },
-    dash: { frames: [8], fps: 1, loop: false },
-    parry: { frames: [1], fps: 1, loop: false }
+    idle:      { frames: [0, 1, 2], fps: 5, loop: true },
+    run:       { frames: [3, 4, 5], fps: 9, loop: true },
+    attack:    { frames: [6, 7, 8], fps: 12, loop: false },
+    jump:      { frames: [3], fps: 1, loop: false },
+    fall:      { frames: [4], fps: 1, loop: false },
+    wallslide: { frames: [5], fps: 1, loop: false },
+    dash:      { frames: [6], fps: 1, loop: false },
+    parry:     { frames: [1], fps: 1, loop: false }
 };
 
 function playAnim(name) {
@@ -911,11 +898,8 @@ function update(time, delta) {
 
     if (hitstopTimer > 0) { hitstopTimer -= delta; return; }
 
-    // Update all enemies (OOP)
     enemies.forEach(e => e.update(delta));
-    // Update projectiles
     updateProjectiles(delta);
-
     updateParry(delta);
     if (comboTimer > 0) { comboTimer -= delta; if (comboTimer <= 0) resetCombo(); }
 
@@ -941,7 +925,7 @@ function update(time, delta) {
         else { spawnDashGhost(gameScene); return; }
     }
 
-    // --- INPUT ---
+    // --- INPUT (all independent) ---
     const mL = keys.A.isDown || cursors.left.isDown;
     const mR = keys.D.isDown || cursors.right.isDown;
     const wantJump = Phaser.Input.Keyboard.JustDown(keys.SPACE) || Phaser.Input.Keyboard.JustDown(cursors.up) || Phaser.Input.Keyboard.JustDown(keys.W);
@@ -970,7 +954,6 @@ function update(time, delta) {
     // Jump
     if (wantJump) jumpBufferTimer = JUMP_BUFFER;
     if (holdJump && onGround && jumpCount === 0 && jumpBufferTimer <= 0) jumpBufferTimer = JUMP_BUFFER;
-
     if (jumpBufferTimer > 0) {
         if (onWall && !onGround) {
             body.setVelocityX((wallDirection === -1 ? 1 : -1) * WALL_JUMP_X);
@@ -1024,13 +1007,10 @@ function triggerAttack() {
     spawnBladeParticles(gameScene, hx, hy, dir, step);
     player.body.setVelocityX(dir * atk.lunge);
 
-    // Hit enemies — check canTakeDamage for shield blocking
     enemies.forEach(e => {
         if (e.dead || e.hurtTimer > 0) return;
         if (Math.abs(e.sprite.x - hx) < atk.hb.w && Math.abs(e.sprite.y - hy) < atk.hb.h + 20) {
-            if (e.canTakeDamage(dir)) {
-                e.takeDamage(atk.dmg, dir);
-            }
+            if (e.canTakeDamage(dir)) e.takeDamage(atk.dmg, dir);
         }
     });
 
@@ -1048,8 +1028,7 @@ function triggerAttack() {
 }
 
 function spawnEnergyWave(scene, x, y, atk, dir, step) {
-    const g = scene.add.graphics().setDepth(13);
-    const t = atk.trail;
+    const g = scene.add.graphics().setDepth(13); const t = atk.trail;
     const sa = Phaser.Math.DegToRad(t.sa * dir), ea = Phaser.Math.DegToRad(t.ea * dir), ccw = dir < 0;
     const r = t.r + 20;
     g.lineStyle(step === 2 ? 18 : 12, 0xff1100, 0.15); g.beginPath(); g.arc(x, y, r + 15, sa, ea, ccw); g.strokePath();
@@ -1107,7 +1086,7 @@ function clearSlash() { slashGfx.forEach(g => { if (g && g.scene) g.destroy() })
 function resetCombo() { comboStep = 0; comboTimer = 0; }
 
 // ============================================================
-//  DASH
+//  DASH (uses attack row frame for visual)
 // ============================================================
 function startDash(scene) {
     isDashing = true; canDash = false; dashTime = DASH_DURATION;
