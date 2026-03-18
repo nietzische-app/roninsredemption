@@ -1,8 +1,8 @@
 // ============================================================
-//  RONIN'S REDEMPTION — Full Polish: Dialog, Torii Portal, Boss AI++
-//  Samurai: 3x3 grid (auto-calculated from image)
+//  RONIN'S REDEMPTION — U-Turn: Clean Arena + Combo System
+//  Samurai: 4 cols x 3 rows (auto-calculated)
 //  Enemies: 4x4 grids
-//  Full screen scaling, Hades-style dialog, YOU DIED click
+//  Flat arena, no platforms, ChromaKey white removal
 // ============================================================
 
 const W = 1280, H = 720;
@@ -20,8 +20,8 @@ const config = {
 const game = new Phaser.Game(config);
 
 // ===================== STATE =====================
-let player, platforms, walls, cursors, keys, gameScene;
-let facingRight = true, jumpCount = 0, onWall = false, wallDirection = 0;
+let player, cursors, keys, gameScene;
+let facingRight = true, jumpCount = 0;
 let isDashing = false, canDash = true, dashTime = 0;
 let comboStep = 0, comboTimer = 0, isAttacking = false, canAttack = true, attackTimer = 0, hitstopTimer = 0;
 let isParrying = false, parryTimer = 0, parryWindow = 0, parryCooldown = 0, parryFlash = null;
@@ -29,23 +29,12 @@ let slashGfx = [], emberTimer = 0, playerGlow;
 let coyoteTimer = 0, jumpBufferTimer = 0;
 let playerDead = false;
 
-// ===================== ENEMY / ROOM STATE =====================
+// ===================== ENEMY STATE =====================
 let enemies = [];
 let projectiles = [];
 let playerHP = 100, playerMaxHP = 100;
 let playerHurtTimer = 0;
 const PLAYER_HURT_IFRAMES = 600;
-let currentRoom = 'main';
-let portalZone = null;
-let portalGfx = null;
-let transitioning = false;
-let boss = null;
-let bossHpGfx = null, bossHpText = null, bossNameText = null;
-let roomObjects = [];
-
-// ===================== DIALOG STATE =====================
-let dialogActive = false;
-let dialogObjects = [];
 
 // ===================== AUDIO =====================
 let audioCtx = null;
@@ -55,8 +44,7 @@ let slashAudio = null, bgmAudio = null;
 let hpBarGfx, hpText;
 
 // ===================== SPRITE SHEET GRID =====================
-// Auto-calculated from image dimensions in create()
-let PLAYER_COLS = 3, PLAYER_ROWS = 3;
+let PLAYER_COLS = 4, PLAYER_ROWS = 3;
 const ENEMY_COLS = 4, ENEMY_ROWS = 4;
 const CHAR_SCALE = 0.35;
 
@@ -64,17 +52,20 @@ const CHAR_SCALE = 0.35;
 const maxJumps = 2;
 const MOVE_SPEED = 420, GROUND_DECEL = 2800, AIR_DECEL = 600;
 const JUMP_FORCE = -620, DOUBLE_JUMP_FORCE = -540;
-const WALL_SLIDE = 90, WALL_JUMP_X = 380, WALL_JUMP_Y = -560;
 const DASH_SPEED = 900, DASH_DURATION = 150, DASH_COOLDOWN = 650;
 const COYOTE_TIME = 80, JUMP_BUFFER = 100;
-const COMBO_WINDOW = 500, HITSTOP_MS = 55;
+const COMBO_WINDOW = 1000, HITSTOP_MS = 55;
 const PARRY_ACTIVE = 200, PARRY_TOTAL = 400, PARRY_CD = 600;
 
+// ===================== COMBO ATTACKS =====================
 const ATTACKS = [
-    { name: '一 SLASH',  dur:240, cd:60,  hb:{ox:55,oy:-10,w:70,h:50}, lunge:180, trail:{sa:-15,ea:25,r:55,w:6}, shake:0.003, dmg:25 },
-    { name: '二 RISE',   dur:240, cd:60,  hb:{ox:50,oy:-25,w:60,h:55}, lunge:140, trail:{sa:40,ea:-50,r:50,w:5}, shake:0.004, dmg:20 },
-    { name: '三 SWEEP',  dur:320, cd:100, hb:{ox:60,oy:10,w:80,h:50},  lunge:240, trail:{sa:-35,ea:55,r:62,w:8}, shake:0.007, dmg:35 }
+    { name: '一 SLASH',  dur: 240, cd: 60,  hb:{ox:55,oy:-10,w:70,h:50}, lunge: 180, trail:{sa:-15,ea:25,r:55,w:6}, shake: 0.003, dmg: 25 },
+    { name: '二 RISE',   dur: 240, cd: 60,  hb:{ox:50,oy:-25,w:60,h:55}, lunge: 140, trail:{sa:40,ea:-50,r:50,w:5}, shake: 0.004, dmg: 20 },
+    { name: '三 SWEEP',  dur: 320, cd: 100, hb:{ox:60,oy:10,w:80,h:50},  lunge: 240, trail:{sa:-35,ea:55,r:62,w:8}, shake: 0.007, dmg: 35 }
 ];
+
+// Run-attack variant (when moving + X)
+const RUN_ATTACK = { name: '疾 DASH CUT', dur: 280, cd: 80, hb:{ox:65,oy:-5,w:85,h:50}, lunge: 320, trail:{sa:-20,ea:30,r:60,w:7}, shake: 0.005, dmg: 30 };
 
 // ============================================================
 //  AUDIO
@@ -123,19 +114,6 @@ function playArrowSound() {
     const g = audioCtx.createGain(); g.gain.setValueAtTime(0.2, t);
     src.connect(hp).connect(g).connect(audioCtx.destination); src.start(t); src.stop(t + dur);
 }
-function playSlamSound() {
-    if (!audioCtx) return; const t = audioCtx.currentTime;
-    const osc = audioCtx.createOscillator(); osc.type = 'sine'; osc.frequency.setValueAtTime(80, t); osc.frequency.exponentialRampToValueAtTime(20, t + 0.4);
-    const g = audioCtx.createGain(); g.gain.setValueAtTime(0.6, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.4);
-    osc.connect(g).connect(audioCtx.destination); osc.start(t); osc.stop(t + 0.4);
-    const dur = 0.3;
-    const buf = audioCtx.createBuffer(1, audioCtx.sampleRate * dur, audioCtx.sampleRate); const data = buf.getChannelData(0);
-    for (let i = 0; i < data.length; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / data.length) * 0.4;
-    const ns = audioCtx.createBufferSource(); ns.buffer = buf;
-    const lp = audioCtx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 200;
-    const ng = audioCtx.createGain(); ng.gain.setValueAtTime(0.4, t);
-    ns.connect(lp).connect(ng).connect(audioCtx.destination); ns.start(t); ns.stop(t + dur);
-}
 function playDeathSound() {
     if (!audioCtx) return; const t = audioCtx.currentTime;
     const osc = audioCtx.createOscillator(); osc.type = 'sine'; osc.frequency.setValueAtTime(60, t); osc.frequency.exponentialRampToValueAtTime(30, t + 1.5);
@@ -149,24 +127,22 @@ let bgmStarted = false;
 function startBGM() { if (bgmStarted || !bgmAudio) return; bgmStarted = true; bgmAudio.play().catch(() => { bgmStarted = false; }); }
 
 // ============================================================
-//  SPRITE SHEET — Slice + ChromaKey (Enhanced)
+//  SPRITE SHEET — Slice + ChromaKey (Enhanced 2-Pass)
 // ============================================================
-function processAndSliceSheet(scene, rawKey, prefix, tolerance, cols, rows, trimBottom) {
+function processAndSliceSheet(scene, rawKey, prefix, tolerance, cols, rows) {
     const src = scene.textures.get(rawKey).getSourceImage();
     const fw = Math.floor(src.width / cols);
-    const rawFh = Math.floor(src.height / rows);
-    const trim = trimBottom || 0;
-    const fh = rawFh - trim;
+    const fh = Math.floor(src.height / rows);
     for (let row = 0; row < rows; row++) {
         for (let col = 0; col < cols; col++) {
             const idx = row * cols + col;
             const c = document.createElement('canvas');
             c.width = fw; c.height = fh;
             const ctx = c.getContext('2d');
-            ctx.drawImage(src, col * fw, row * rawFh, fw, fh, 0, 0, fw, fh);
+            ctx.drawImage(src, col * fw, row * fh, fw, fh, 0, 0, fw, fh);
             const imgData = ctx.getImageData(0, 0, fw, fh);
             const d = imgData.data;
-            // Pass 1: Remove white/near-white
+            // Pass 1: Remove white/near-white pixels
             for (let i = 0; i < d.length; i += 4) {
                 const r = d[i], g = d[i+1], b = d[i+2];
                 if (r > (255 - tolerance) && g > (255 - tolerance) && b > (255 - tolerance)) {
@@ -176,7 +152,7 @@ function processAndSliceSheet(scene, rawKey, prefix, tolerance, cols, rows, trim
                     d[i+3] = Math.min(d[i+3], Math.max(0, Math.floor((255 - brightness) * 4)));
                 }
             }
-            // Pass 2: Edge soften
+            // Pass 2: Edge softening — smooth borders next to transparent pixels
             for (let y = 1; y < fh - 1; y++) {
                 for (let x = 1; x < fw - 1; x++) {
                     const pi = (y * fw + x) * 4;
@@ -201,12 +177,10 @@ function processAndSliceSheet(scene, rawKey, prefix, tolerance, cols, rows, trim
 }
 
 // ============================================================
-//  SCENE
+//  SCENE — PRELOAD
 // ============================================================
 function preload() {
-    this.load.image('bg_castle', 'background.png');
-    this.load.image('bg_boss', 'background_boss.png');
-    this.load.image('samurai_art', 'samurai_art.png.png');
+    this.load.image('bg_arena', 'background.png');
     this.load.image('samurai_raw', 'samurai_sheet.jpg');
     this.load.image('oni_raw', 'enemy_sheet.jpg');
     this.load.image('archer_raw', 'enemy__archer.jpg');
@@ -214,31 +188,43 @@ function preload() {
     this.load.image('assassin_raw', 'enemy_assasin.jpg');
 }
 
+// ============================================================
+//  SCENE — CREATE
+// ============================================================
 function create() {
     gameScene = this;
 
-    // --- Auto-detect samurai grid from image ---
-    const samSrc = this.textures.get('samurai_raw').getSourceImage();
-    // Image is 1024x1024, grid is 3x3
-    PLAYER_COLS = 3; PLAYER_ROWS = 3;
+    // --- Auto-calculate samurai grid: 4 columns x 3 rows ---
+    PLAYER_COLS = 4; PLAYER_ROWS = 3;
 
-    // --- Process sheets (tolerance 42 for aggressive white removal) ---
-    const samDims = processAndSliceSheet(this, 'samurai_raw', 'sam_f', 42, PLAYER_COLS, PLAYER_ROWS, 40);
-    const oniDims = processAndSliceSheet(this, 'oni_raw', 'oni_f', 42, ENEMY_COLS, ENEMY_ROWS, 0);
-    const archerDims = processAndSliceSheet(this, 'archer_raw', 'archer_f', 42, ENEMY_COLS, ENEMY_ROWS, 0);
-    const shieldDims = processAndSliceSheet(this, 'shield_raw', 'shield_f', 42, ENEMY_COLS, ENEMY_ROWS, 0);
-    const assassinDims = processAndSliceSheet(this, 'assassin_raw', 'assassin_f', 42, ENEMY_COLS, ENEMY_ROWS, 0);
+    // --- Process all sheets with ChromaKey (tolerance 42) ---
+    const samDims = processAndSliceSheet(this, 'samurai_raw', 'sam_f', 42, PLAYER_COLS, PLAYER_ROWS);
+    const oniDims = processAndSliceSheet(this, 'oni_raw', 'oni_f', 42, ENEMY_COLS, ENEMY_ROWS);
+    const archerDims = processAndSliceSheet(this, 'archer_raw', 'archer_f', 42, ENEMY_COLS, ENEMY_ROWS);
+    const shieldDims = processAndSliceSheet(this, 'shield_raw', 'shield_f', 42, ENEMY_COLS, ENEMY_ROWS);
+    const assassinDims = processAndSliceSheet(this, 'assassin_raw', 'assassin_f', 42, ENEMY_COLS, ENEMY_ROWS);
 
     EnemyOni.dims = oniDims;
     EnemyArcher.dims = archerDims;
     EnemyShield.dims = shieldDims;
     EnemyAssassin.dims = assassinDims;
-    BossOni.dims = oniDims;
+
+    // --- BACKGROUND: Simple flat arena ---
+    this.add.image(W / 2, H / 2, 'bg_arena').setDepth(0).setDisplaySize(W, H);
+    drawFog(this);
+
+    // --- GROUND: Single invisible floor ---
+    const groundGfx = this.add.graphics();
+    groundGfx.fillStyle(0x000000, 0);
+    groundGfx.fillRect(0, 0, W, 20);
+    groundGfx.generateTexture('ground_tex', W, 20);
+    groundGfx.destroy();
+    const ground = this.physics.add.staticImage(W / 2, H - 10, 'ground_tex');
+    ground.setAlpha(0).refreshBody();
 
     // --- PLAYER ---
     player = this.physics.add.sprite(400, 550, 'sam_f0');
     player.setScale(CHAR_SCALE).setBounce(0).setCollideWorldBounds(true).setDepth(10);
-    // Physics body — tighter centered box
     const pBw = Math.floor(samDims.fw * 0.25);
     const pBh = Math.floor(samDims.fh * 0.45);
     const pBx = Math.floor((samDims.fw - pBw) / 2);
@@ -246,6 +232,9 @@ function create() {
     player.body.setSize(pBw, pBh).setOffset(pBx, pBy);
     player.body.setMaxVelocityY(900);
     player.animFrame = 0; player.animTimer = 0; player.currentAnim = 'idle';
+
+    // --- Collider: player on ground ---
+    this.physics.add.collider(player, ground, onLand, null, this);
 
     // --- PLAYER GLOW ---
     const gc = document.createElement('canvas'); gc.width = 300; gc.height = 300;
@@ -265,350 +254,50 @@ function create() {
         SHIFT: this.input.keyboard.addKey('SHIFT'),
         X: this.input.keyboard.addKey('X'), C: this.input.keyboard.addKey('C')
     };
-    this.input.on('pointerdown', (p) => {
-        if (dialogActive) return;
-        if (p.leftButtonDown()) triggerAttack();
+    this.input.on('pointerdown', () => {
         if (!audioCtx) initAudio(); startBGM();
     });
+
+    // --- ENEMIES: Spawn in flat arena ---
+    const spawnEnemy = (Type, x) => {
+        const e = new Type(this, x, 550);
+        enemies.push(e);
+        this.physics.add.collider(e.sprite, ground);
+    };
+    spawnEnemy(EnemyOni, 900);
+    spawnEnemy(EnemyOni, 200);
+    spawnEnemy(EnemyArcher, 1050);
+    spawnEnemy(EnemyArcher, 250);
+    spawnEnemy(EnemyShield, 640);
+    spawnEnemy(EnemyAssassin, 750);
 
     // --- HUD ---
     createHUD(this);
     initAudio();
     this.input.keyboard.on('keydown', () => { startBGM(); });
 
-    // --- BUILD MAIN ROOM ---
-    buildRoom(this, 'main');
+    // --- CAMERA ---
+    this.cameras.main.setZoom(1.6);
+    this.cameras.main.startFollow(player, true, 0.1, 0.1);
+    this.cameras.main.setDeadzone(60, 30);
+    this.cameras.main.setBounds(0, 0, W, H);
+
+    // Store ground reference for respawns
+    this.groundBody = ground;
 }
 
 // ============================================================
-//  ROOM SYSTEM
+//  FOG / VIGNETTE
 // ============================================================
-function clearRoom() {
-    enemies.forEach(e => {
-        if (e.sprite && e.sprite.scene) e.sprite.destroy();
-        if (e.hpGfx && e.hpGfx.scene) e.hpGfx.destroy();
-        if (e.typeLabel && e.typeLabel.scene) e.typeLabel.destroy();
-    });
-    enemies = [];
-    projectiles.forEach(p => { if (p.gfx && p.gfx.scene) p.gfx.destroy(); });
-    projectiles = [];
-    roomObjects.forEach(obj => { if (obj && obj.scene) obj.destroy(); });
-    roomObjects = [];
-    if (platforms) { platforms.clear(true, true); }
-    if (walls) { walls.clear(true, true); }
-    if (bossHpGfx) { bossHpGfx.destroy(); bossHpGfx = null; }
-    if (bossHpText) { bossHpText.destroy(); bossHpText = null; }
-    if (bossNameText) { bossNameText.destroy(); bossNameText = null; }
-    if (portalGfx) { portalGfx.destroy(); portalGfx = null; }
-    boss = null;
-}
-
-function buildRoom(scene, roomName) {
-    currentRoom = roomName;
-    platforms = scene.physics.add.staticGroup();
-    walls = scene.physics.add.staticGroup();
-
-    if (roomName === 'main') {
-        const bg = scene.add.image(W / 2, H / 2, 'bg_castle').setDepth(0).setDisplaySize(W, H);
-        roomObjects.push(bg);
-        drawFog(scene);
-
-        // ===== INVISIBLE PLATFORMS mapped to bg architecture =====
-        makeInvisiblePlatform(scene, 640, 695, 1280, 20);
-        makeInvisiblePlatform(scene, 640, 588, 540, 12);
-        makeInvisiblePlatform(scene, 160, 593, 260, 12);
-        makeInvisiblePlatform(scene, 1120, 593, 260, 12);
-        makeInvisiblePlatform(scene, 180, 438, 250, 10);
-        makeInvisiblePlatform(scene, 1100, 438, 250, 10);
-        makeInvisiblePlatform(scene, 640, 340, 580, 10);
-        makeInvisiblePlatform(scene, 640, 232, 680, 10);
-        makeInvisiblePlatform(scene, 640, 168, 520, 10);
-        makeInvisiblePlatform(scene, 430, 625, 100, 8);
-        makeInvisiblePlatform(scene, 470, 608, 80, 8);
-        makeInvisiblePlatform(scene, 850, 625, 100, 8);
-        makeInvisiblePlatform(scene, 810, 608, 80, 8);
-
-        makeInvisibleWall(scene, 8, 360, 16, 720);
-        makeInvisibleWall(scene, 1272, 360, 16, 720);
-        makeInvisibleWall(scene, 310, 520, 14, 180);
-        makeInvisibleWall(scene, 970, 520, 14, 180);
-
-        enemies.push(new EnemyOni(scene, 900, 550));
-        enemies.push(new EnemyOni(scene, 200, 550));
-        enemies.push(new EnemyArcher(scene, 1100, 390));
-        enemies.push(new EnemyArcher(scene, 180, 390));
-        enemies.push(new EnemyShield(scene, 640, 550));
-        enemies.push(new EnemyAssassin(scene, 700, 300));
-
-        // Torii Gate Portal
-        createToriiPortal(scene, 1230, 640);
-
-    } else if (roomName === 'boss') {
-        // Boss background
-        const bg = scene.add.image(W / 2, H / 2, 'bg_boss').setDepth(0).setDisplaySize(W, H);
-        roomObjects.push(bg);
-        drawFog(scene);
-
-        // Boss arena platforms (mapped to boss bg columns/ledges)
-        makeInvisiblePlatform(scene, 640, 695, 1280, 20);
-        makeInvisiblePlatform(scene, 200, 480, 160, 10);
-        makeInvisiblePlatform(scene, 1080, 480, 160, 10);
-        makeInvisiblePlatform(scene, 640, 380, 240, 10);
-        makeInvisiblePlatform(scene, 400, 540, 120, 10);
-        makeInvisiblePlatform(scene, 880, 540, 120, 10);
-
-        makeInvisibleWall(scene, 8, 360, 16, 720);
-        makeInvisibleWall(scene, 1272, 360, 16, 720);
-
-        // Boss
-        boss = new BossOni(scene, 900, 600);
-        enemies.push(boss);
-
-        // Boss HUD
-        const z = 1.6;
-        bossNameText = scene.add.text(W / z / 2, 50, '⛩ THE GREAT ONI ⛩', {
-            fontFamily: 'Georgia, serif', fontSize: '13px', color: '#ff4444', fontStyle: 'bold'
-        }).setOrigin(0.5).setDepth(102).setScrollFactor(0);
-        bossHpGfx = scene.add.graphics().setDepth(101).setScrollFactor(0);
-        bossHpText = scene.add.text(W / z / 2, 69, '', {
-            fontFamily: 'monospace', fontSize: '7px', color: '#ffffff'
-        }).setOrigin(0.5).setDepth(102).setScrollFactor(0);
-    }
-
-    // Colliders
-    scene.physics.add.collider(player, platforms, onLand, null, scene);
-    scene.physics.add.collider(player, walls);
-    enemies.forEach(e => {
-        scene.physics.add.collider(e.sprite, platforms);
-        scene.physics.add.collider(e.sprite, walls);
-    });
-
-    // Camera
-    scene.cameras.main.setZoom(1.6);
-    scene.cameras.main.startFollow(player, true, 0.1, 0.1);
-    scene.cameras.main.setDeadzone(60, 30);
-    scene.cameras.main.setBounds(0, 0, W, H);
-}
-
-// ============================================================
-//  TORII GATE PORTAL
-// ============================================================
-function createToriiPortal(scene, x, y) {
-    portalGfx = scene.add.graphics().setDepth(5);
-    const px = x, py = y - 50;
-
-    // Torii pillars
-    portalGfx.fillStyle(0x8b0000, 1);
-    portalGfx.fillRect(px - 22, py - 30, 6, 80); // left pillar
-    portalGfx.fillRect(px + 16, py - 30, 6, 80); // right pillar
-
-    // Top beam (kasagi)
-    portalGfx.fillStyle(0xaa1111, 1);
-    portalGfx.fillRect(px - 28, py - 38, 56, 6);
-    // Secondary beam (nuki)
-    portalGfx.fillStyle(0x991111, 1);
-    portalGfx.fillRect(px - 24, py - 26, 48, 4);
-
-    // Roof caps
-    portalGfx.fillStyle(0x660000, 1);
-    portalGfx.fillRect(px - 32, py - 42, 64, 5);
-
-    // Inner glow
-    portalGfx.fillStyle(0xff6600, 0.08);
-    portalGfx.fillRect(px - 14, py - 24, 28, 70);
-
-    // Pulsing energy particles (via tween on separate graphics)
-    const glowG = scene.add.graphics().setDepth(4);
-    glowG.fillStyle(0xff4400, 0.12);
-    glowG.fillCircle(px, py + 10, 20);
-    glowG.fillStyle(0xff8800, 0.06);
-    glowG.fillCircle(px, py + 5, 35);
-    scene.tweens.add({ targets: glowG, alpha: 0.3, duration: 1200, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
-    roomObjects.push(glowG);
-    roomObjects.push(portalGfx);
-
-    // Label
-    const lbl = scene.add.text(px, py - 52, '⛩ BOSS ⛩', {
-        fontFamily: 'Georgia, serif', fontSize: '8px', color: '#ff4444', fontStyle: 'bold'
-    }).setOrigin(0.5).setDepth(6);
-    scene.tweens.add({ targets: lbl, alpha: 0.3, duration: 900, yoyo: true, repeat: -1 });
-    roomObjects.push(lbl);
-
-    portalZone = scene.physics.add.staticBody(px - 15, py - 25, 30, 70);
-    roomObjects.push(portalZone);
-}
-
-function transitionToRoom(targetRoom) {
-    if (transitioning) return;
-    transitioning = true;
-    const fade = gameScene.add.rectangle(W / 2, H / 2, W * 2, H * 2, 0x000000, 0).setDepth(500).setScrollFactor(0);
-    gameScene.tweens.add({
-        targets: fade, alpha: 1, duration: 400,
-        onComplete: () => {
-            clearRoom();
-            player.setPosition(80, 600);
-            player.body.setVelocity(0, 0);
-            buildRoom(gameScene, targetRoom);
-            gameScene.tweens.add({
-                targets: fade, alpha: 0, duration: 400,
-                onComplete: () => {
-                    fade.destroy();
-                    transitioning = false;
-                    // Start dialog when entering boss room
-                    if (targetRoom === 'boss') {
-                        startBossDialog();
-                    }
-                }
-            });
-        }
-    });
-}
-
-// ============================================================
-//  HADES-STYLE DIALOG SYSTEM
-// ============================================================
-function startBossDialog() {
-    dialogActive = true;
-    // Pause physics
-    gameScene.physics.pause();
-
-    const z = 1.6;
-    const cw = W / z, ch = H / z;
-
-    // Dark overlay
-    const overlay = gameScene.add.rectangle(cw/2, ch/2, cw, ch, 0x000000, 0).setDepth(300).setScrollFactor(0);
-    gameScene.tweens.add({ targets: overlay, alpha: 0.6, duration: 500 });
-    dialogObjects.push(overlay);
-
-    // Portrait — samurai art on left side
-    const portrait = gameScene.add.image(110, ch/2, 'samurai_art').setDepth(302).setScrollFactor(0).setAlpha(0);
-    // Scale to fit nicely
-    const pScale = (ch * 0.75) / portrait.height;
-    portrait.setScale(pScale).setOrigin(0.5, 0.5);
-    gameScene.tweens.add({ targets: portrait, alpha: 1, x: 120, duration: 600, ease: 'Back.easeOut' });
-    dialogObjects.push(portrait);
-
-    // Portrait gold frame/border glow
-    const frameGfx = gameScene.add.graphics().setDepth(301).setScrollFactor(0);
-    frameGfx.lineStyle(2, 0xccaa44, 0.7);
-    const fx = 120 - (portrait.width * pScale)/2 - 4;
-    const fy = ch/2 - (portrait.height * pScale)/2 - 4;
-    const ffw = portrait.width * pScale + 8;
-    const ffh = portrait.height * pScale + 8;
-    frameGfx.strokeRoundedRect(fx, fy, ffw, ffh, 4);
-    frameGfx.setAlpha(0);
-    gameScene.tweens.add({ targets: frameGfx, alpha: 1, duration: 800, delay: 300 });
-    dialogObjects.push(frameGfx);
-
-    // Dialog box — bottom area, gold-framed black box
-    const dbx = 30, dby = ch - 90, dbw = cw - 60, dbh = 75;
-    const dialogBox = gameScene.add.graphics().setDepth(303).setScrollFactor(0);
-    // Dark fill
-    dialogBox.fillStyle(0x0a0a0a, 0.92);
-    dialogBox.fillRoundedRect(dbx, dby, dbw, dbh, 6);
-    // Gold border
-    dialogBox.lineStyle(2, 0xccaa33, 0.8);
-    dialogBox.strokeRoundedRect(dbx, dby, dbw, dbh, 6);
-    // Inner gold line
-    dialogBox.lineStyle(1, 0x886622, 0.4);
-    dialogBox.strokeRoundedRect(dbx + 4, dby + 4, dbw - 8, dbh - 8, 4);
-    dialogBox.setAlpha(0);
-    gameScene.tweens.add({ targets: dialogBox, alpha: 1, duration: 500, delay: 400 });
-    dialogObjects.push(dialogBox);
-
-    // Speaker name
-    const speakerName = gameScene.add.text(dbx + 18, dby + 8, '⛩ THE GREAT ONI', {
-        fontFamily: 'Georgia, serif', fontSize: '10px', color: '#ccaa33', fontStyle: 'bold'
-    }).setDepth(304).setScrollFactor(0).setAlpha(0);
-    gameScene.tweens.add({ targets: speakerName, alpha: 1, duration: 500, delay: 600 });
-    dialogObjects.push(speakerName);
-
-    // Typewriter text
-    const fullText = 'Bu kale senin mezarin olacak, Ronin! Kemiklerini ezerek ayin yapmak icin sabirsizlaniyorum...';
-    const dialogText = gameScene.add.text(dbx + 18, dby + 28, '', {
-        fontFamily: 'Georgia, serif', fontSize: '11px', color: '#ddddcc',
-        wordWrap: { width: dbw - 50 }, lineSpacing: 4
-    }).setDepth(304).setScrollFactor(0);
-    dialogObjects.push(dialogText);
-
-    // Typewriter effect
-    let charIndex = 0;
-    const typeTimer = gameScene.time.addEvent({
-        delay: 35,
-        repeat: fullText.length - 1,
-        callback: () => {
-            charIndex++;
-            dialogText.setText(fullText.substring(0, charIndex));
-        }
-    });
-    dialogObjects.push(typeTimer);
-
-    // "Press SPACE to continue" hint
-    const hint = gameScene.add.text(dbx + dbw - 18, dby + dbh - 16, '[SPACE]', {
-        fontFamily: 'monospace', fontSize: '7px', color: '#666655', fontStyle: 'italic'
-    }).setOrigin(1, 0.5).setDepth(304).setScrollFactor(0).setAlpha(0);
-    gameScene.tweens.add({ targets: hint, alpha: 0.7, duration: 500, delay: 1500, yoyo: true, repeat: -1 });
-    dialogObjects.push(hint);
-
-    // Handle SPACE to close dialog
-    const closeHandler = () => {
-        if (!dialogActive) return;
-        // If typewriter still running, skip to end
-        if (charIndex < fullText.length) {
-            typeTimer.remove();
-            dialogText.setText(fullText);
-            charIndex = fullText.length;
-            return;
-        }
-        // Close dialog
-        dialogActive = false;
-        dialogObjects.forEach(obj => {
-            if (obj && obj.destroy) obj.destroy();
-            else if (obj && obj.remove) obj.remove();
-        });
-        dialogObjects = [];
-        gameScene.physics.resume();
-        keys.SPACE.off('down', closeHandler);
-    };
-    keys.SPACE.on('down', closeHandler);
-}
-
 function drawFog(scene) {
     const fogG = scene.add.graphics().setDepth(1);
     fogG.fillGradientStyle(0x000000, 0x000000, 0x0a0404, 0x0a0404, 0, 0, 0.3, 0.3);
     fogG.fillRect(0, 550, W, 170);
-    roomObjects.push(fogG);
     const v = scene.add.graphics().setDepth(90).setScrollFactor(0);
     v.fillGradientStyle(0x000000, 0x000000, 0x000000, 0x000000, 0.4, 0.4, 0, 0); v.fillRect(0, 0, W, 100);
     v.fillGradientStyle(0x000000, 0x000000, 0x000000, 0x000000, 0, 0, 0.5, 0.5); v.fillRect(0, H - 120, W, 120);
     v.fillGradientStyle(0x000000, 0x000000, 0x000000, 0x000000, 0.35, 0, 0, 0.35); v.fillRect(0, 0, 80, H);
     v.fillGradientStyle(0x000000, 0x000000, 0x000000, 0x000000, 0, 0.35, 0.35, 0); v.fillRect(W - 80, 0, 80, H);
-    roomObjects.push(v);
-}
-
-// ============================================================
-//  INVISIBLE PLATFORMS
-// ============================================================
-function makeInvisiblePlatform(scene, x, y, w, h) {
-    const key = 'ip_' + x + '_' + y + '_' + currentRoom + '_' + Math.random();
-    const g = scene.add.graphics();
-    g.fillStyle(0x000000, 0); g.fillRect(0, 0, w, h);
-    g.generateTexture(key, w, h); g.destroy();
-    const plat = platforms.create(x, y, key);
-    plat.setAlpha(0);
-    plat.body.setSize(w, h).setOffset(0, 0);
-    plat.refreshBody();
-}
-
-function makeInvisibleWall(scene, x, y, w, h) {
-    const key = 'iw_' + x + '_' + y + '_' + currentRoom + '_' + Math.random();
-    const g = scene.add.graphics();
-    g.fillStyle(0x000000, 0); g.fillRect(0, 0, w, h);
-    g.generateTexture(key, w, h); g.destroy();
-    const wall = walls.create(x, y, key);
-    wall.setAlpha(0);
-    wall.body.setSize(w, h).setOffset(0, 0);
-    wall.refreshBody();
 }
 
 // ============================================================
@@ -709,9 +398,8 @@ class Enemy {
         });
         const kt = gameScene.add.text(s.x, s.y - 40, 'SLAIN', { fontFamily: 'monospace', fontSize: '12px', color: '#ff6644', fontStyle: 'bold' }).setOrigin(0.5).setDepth(30);
         gameScene.tweens.add({ targets: kt, y: kt.y - 30, alpha: 0, duration: 1000, onComplete: () => kt.destroy() });
-        if (currentRoom === 'main') {
-            gameScene.time.delayedCall(6000, () => { this.respawn(); });
-        }
+        // Respawn after 6s
+        gameScene.time.delayedCall(6000, () => { this.respawn(); });
     }
 
     respawn() {
@@ -719,8 +407,9 @@ class Enemy {
         if (idx !== -1) enemies.splice(idx, 1);
         const ne = new this.constructor(gameScene, Phaser.Math.Between(200, 1080), 550);
         enemies.push(ne);
-        gameScene.physics.add.collider(ne.sprite, platforms);
-        gameScene.physics.add.collider(ne.sprite, walls);
+        if (gameScene.groundBody) {
+            gameScene.physics.add.collider(ne.sprite, gameScene.groundBody);
+        }
     }
 
     checkHitPlayer() {
@@ -911,220 +600,6 @@ class EnemyAssassin extends Enemy {
 }
 
 // ============================================================
-//  BOSS — THE GREAT ONI (Spawns at 70% and 30%)
-// ============================================================
-class BossOni extends Enemy {
-    static dims = { fw: 256, fh: 256 };
-    constructor(scene, x, y) {
-        super(scene, x, y, {
-            prefix: 'oni_f', label: '', labelColor: '#ff2222',
-            hp: 600, scale: 0.84, attackDmg: 25, knockback: 400,
-            speed: 80, chaseRange: 600, attackRange: 80,
-            attackDur: 600, attackCooldown: 1500,
-            bodyWRatio: 0.30, bodyHRatio: 0.50, bodyYOffset: 0.30,
-            dims: BossOni.dims,
-            anims: { idle:{frames:[0,1,2,3],fps:4,loop:true}, walk:{frames:[4,5,6,7],fps:6,loop:true}, attack:{frames:[8,9,10,11],fps:10,loop:false}, special:{frames:[12,13,14,15],fps:8,loop:false} }
-        });
-        this.specialTimer = 4000;
-        this.isDashing = false;
-        this.dashTimer = 0;
-        this.isSlamming = false;
-        this.slamTimer = 0;
-        this.typeLabel.setAlpha(0);
-        this.spawned70 = false;
-        this.spawned30 = false;
-    }
-
-    drawHP() {
-        this.hpGfx.clear();
-        if (bossHpGfx) {
-            bossHpGfx.clear();
-            const z = 1.6;
-            const bx = (W/z/2) - 120, by = 58, bw = 240, bh = 10;
-            const ratio = Math.max(0, this.hp / this.maxHp);
-            const fillW = Math.floor((bw - 4) * ratio);
-            bossHpGfx.fillStyle(0x1a0000, 0.9); bossHpGfx.fillRoundedRect(bx, by, bw, bh, 5);
-            bossHpGfx.lineStyle(1, 0xff2222, 0.6); bossHpGfx.strokeRoundedRect(bx, by, bw, bh, 5);
-            if (fillW > 0) {
-                let color = ratio > 0.5 ? 0xcc2222 : ratio > 0.25 ? 0xff4400 : 0xff0000;
-                bossHpGfx.fillStyle(color, 0.9); bossHpGfx.fillRoundedRect(bx + 2, by + 2, fillW, bh - 4, 3);
-                bossHpGfx.lineStyle(1, 0xffffff, 0.1); bossHpGfx.lineBetween(bx + 5, by + 3, bx + 2 + fillW - 3, by + 3);
-                if (fillW > 6) {
-                    bossHpGfx.fillStyle(0xffffff, 0.08);
-                    bossHpGfx.fillRoundedRect(bx + 2, by + 2, fillW, (bh - 4) / 2, {tl:3,tr:3,bl:0,br:0});
-                }
-                if (ratio < 0.3) {
-                    bossHpGfx.lineStyle(2, 0xff0000, 0.3 + Math.sin(Date.now() * 0.005) * 0.2);
-                    bossHpGfx.strokeRoundedRect(bx - 1, by - 1, bw + 2, bh + 2, 6);
-                }
-            }
-            if (bossHpText) bossHpText.setText(Math.ceil(this.hp) + ' / ' + this.maxHp);
-        }
-
-        // Spawn reinforcements at 70% and 30%
-        const ratio = this.hp / this.maxHp;
-        if (!this.spawned70 && ratio <= 0.70 && !this.dead) {
-            this.spawned70 = true;
-            this.spawnWave('PHASE 2');
-        }
-        if (!this.spawned30 && ratio <= 0.30 && !this.dead) {
-            this.spawned30 = true;
-            this.spawnWave('FINAL PHASE');
-        }
-    }
-
-    spawnWave(phaseName) {
-        gameScene.cameras.main.shake(300, 0.01);
-        if (bossNameText) bossNameText.setText('⛩ ' + phaseName + ' ⛩').setColor('#ff8800');
-
-        // 5 enemies: mix of assassins and archers
-        const spawnPositions = [
-            { x: 60, y: 600 }, { x: 1220, y: 600 },
-            { x: 150, y: 450 }, { x: 1130, y: 450 },
-            { x: 640, y: 350 }
-        ];
-        spawnPositions.forEach((pos, i) => {
-            gameScene.time.delayedCall(i * 300, () => {
-                // Smoke effect
-                for (let j = 0; j < 6; j++) {
-                    const px = pos.x + Phaser.Math.Between(-12, 12), py = pos.y + Phaser.Math.Between(-15, 5);
-                    const smoke = gameScene.add.circle(px, py, Phaser.Math.Between(3, 7), i % 2 === 0 ? 0x44ddcc : 0x88ff88, 0.6).setDepth(15);
-                    gameScene.tweens.add({ targets: smoke, y: py - 35, alpha: 0, scaleX: 2, scaleY: 2, duration: 350, onComplete: () => smoke.destroy() });
-                }
-                const wt = gameScene.add.text(pos.x, pos.y - 35, '!', {
-                    fontFamily: 'Georgia, serif', fontSize: '14px', color: '#ff4444', fontStyle: 'bold'
-                }).setOrigin(0.5).setDepth(30);
-                gameScene.tweens.add({ targets: wt, y: wt.y - 20, alpha: 0, duration: 800, onComplete: () => wt.destroy() });
-
-                const enemy = i % 2 === 0
-                    ? new EnemyAssassin(gameScene, pos.x, pos.y)
-                    : new EnemyArcher(gameScene, pos.x, pos.y);
-                enemies.push(enemy);
-                gameScene.physics.add.collider(enemy.sprite, platforms);
-                gameScene.physics.add.collider(enemy.sprite, walls);
-            });
-        });
-    }
-
-    die() {
-        this.dead = true; this.sprite.body.enable = false;
-        const s = this.sprite;
-        for (let i = 0; i < 30; i++) {
-            const a = Phaser.Math.DegToRad(Phaser.Math.Between(0, 360)), r = Phaser.Math.Between(10, 40);
-            const px = s.x + Math.cos(a)*r, py = s.y + Math.sin(a)*r;
-            const sp = gameScene.add.rectangle(px, py, Phaser.Math.Between(3, 10), Phaser.Math.Between(3, 10),
-                Math.random() < 0.5 ? 0xff2222 : 0xff8844, 1).setDepth(15);
-            gameScene.tweens.add({ targets: sp, x: px + Math.cos(a)*Phaser.Math.Between(50, 150), y: py + Math.sin(a)*Phaser.Math.Between(50, 150) - 30,
-                alpha: 0, rotation: Phaser.Math.Between(-5, 5), duration: Phaser.Math.Between(500, 1200), onComplete: () => sp.destroy() });
-        }
-        const fl = gameScene.add.circle(s.x, s.y, 80, 0xffffff, 0.6).setDepth(50);
-        gameScene.tweens.add({ targets: fl, scaleX: 4, scaleY: 4, alpha: 0, duration: 600, onComplete: () => fl.destroy() });
-        gameScene.cameras.main.shake(500, 0.015);
-        gameScene.tweens.add({ targets: s, alpha: 0, scaleX: 0, scaleY: 0, duration: 800, ease: 'Power3',
-            onComplete: () => { s.destroy(); this.hpGfx.destroy(); this.typeLabel.destroy(); }
-        });
-        const z = 1.6;
-        const vt = gameScene.add.text(W/z/2, H/z/2 - 20, 'VICTORY!', { fontFamily: 'Georgia, serif', fontSize: '28px', color: '#ffcc00', fontStyle: 'bold' }).setOrigin(0.5).setDepth(201).setScrollFactor(0).setAlpha(0);
-        gameScene.tweens.add({ targets: vt, alpha: 1, duration: 800, delay: 600 });
-        const st = gameScene.add.text(W/z/2, H/z/2 + 15, 'The Great Oni has fallen.', { fontFamily: 'Georgia, serif', fontSize: '10px', color: '#ccaa44' }).setOrigin(0.5).setDepth(201).setScrollFactor(0).setAlpha(0);
-        gameScene.tweens.add({ targets: st, alpha: 1, duration: 800, delay: 1200 });
-        if (bossNameText) bossNameText.setText('DEFEATED');
-    }
-
-    updateAI(delta) {
-        const s = this.sprite, dx = player.x - s.x, dist = Math.sqrt(dx*dx + (player.y-s.y)**2);
-
-        this.specialTimer -= delta;
-        if (this.specialTimer <= 0 && this.state !== 'attack' && !this.isDashing && !this.isSlamming) {
-            if (Math.random() < 0.5) this.startSlam();
-            else this.startDashAttack();
-            this.specialTimer = 3500 + Math.random() * 1500;
-            return;
-        }
-
-        if (this.isSlamming) {
-            this.slamTimer -= delta;
-            this.playAnim('special');
-            if (this.slamTimer <= 0) { this.isSlamming = false; s.clearTint(); }
-            s.body.setVelocityX(0);
-            return;
-        }
-
-        if (this.isDashing) {
-            this.dashTimer -= delta;
-            this.playAnim('attack'); s.setTint(0xff4400);
-            if (this.dashTimer <= 0) { this.isDashing = false; s.body.setVelocityX(0); s.clearTint(); this.attackCd = 800; }
-            if (Math.abs(player.x - s.x) < 60 && Math.abs(player.y - s.y) < 60) this.checkHitPlayer();
-            return;
-        }
-
-        if (this.state === 'attack') {
-            this.attackTimer -= delta; this.playAnim('attack');
-            if (this.attackTimer < this.config.attackDur*0.3) { s.setTint(0xff2222); if (this.attackTimer < this.config.attackDur*0.25 && this.attackTimer > this.config.attackDur*0.15) this.checkHitPlayer(); }
-            if (this.attackTimer <= 0) { this.state='idle'; this.attackCd=this.config.attackCooldown; s.clearTint(); }
-            s.body.setVelocityX(0);
-        } else if (dist < this.config.attackRange && this.attackCd <= 0) {
-            this.state='attack'; this.attackTimer=this.config.attackDur; s.body.setVelocityX(0);
-        } else if (dist < this.config.chaseRange) {
-            this.state='chase'; this.playAnim('walk'); s.body.setVelocityX((dx>0?1:-1)*this.config.speed);
-        } else {
-            this.state='idle'; this.playAnim('idle'); s.body.setVelocityX(0);
-        }
-    }
-
-    startSlam() {
-        this.isSlamming = true; this.slamTimer = 800;
-        this.playAnim('special'); this.sprite.setTint(0xff8800);
-        this.sprite.body.setVelocityX(0);
-        playSlamSound();
-        gameScene.time.delayedCall(400, () => {
-            if (this.dead) return;
-            gameScene.cameras.main.shake(300, 0.015);
-            const sx = this.sprite.x, sy = this.sprite.y + 20;
-            const wave = gameScene.add.graphics().setDepth(14);
-            wave.lineStyle(4, 0xff4400, 0.7); wave.strokeCircle(sx, sy, 30);
-            wave.lineStyle(2, 0xffaa00, 0.5); wave.strokeCircle(sx, sy, 60);
-            wave.lineStyle(3, 0xff2200, 0.3); wave.strokeCircle(sx, sy, 90);
-            gameScene.tweens.add({ targets: wave, scaleX: 3, scaleY: 1.5, alpha: 0, duration: 500, onComplete: () => wave.destroy() });
-            for (let i = 0; i < 12; i++) {
-                const px = sx + Phaser.Math.Between(-120, 120), py = sy;
-                const db = gameScene.add.rectangle(px, py, Phaser.Math.Between(3, 8), Phaser.Math.Between(3, 8), 0x664422, 1).setDepth(14);
-                gameScene.tweens.add({ targets: db, y: py - Phaser.Math.Between(30, 100), x: px + Phaser.Math.Between(-30, 30), alpha: 0, duration: 600, onComplete: () => db.destroy() });
-            }
-            if (!isDashing && playerHurtTimer <= 0 && playerHP > 0 && !playerDead) {
-                if (Math.abs(player.x - sx) < 180 && Math.abs(player.y - sy) < 100) {
-                    playerHP -= 25; playerHurtTimer = PLAYER_HURT_IFRAMES;
-                    playHurtSound();
-                    player.body.setVelocityY(-350);
-                    player.body.setVelocityX((player.x > sx ? 1 : -1) * 400);
-                    player.setTint(0xff4444);
-                    gameScene.cameras.main.shake(100, 0.01);
-                    updateHUD();
-                    if (playerHP <= 0) playerDeath();
-                }
-            }
-        });
-    }
-
-    startDashAttack() {
-        this.isDashing = true; this.dashTimer = 450;
-        const dir = this.facingRight ? 1 : -1;
-        this.sprite.body.setVelocityX(dir * 700);
-        this.sprite.setTint(0xff4400);
-        this.playAnim('attack');
-        for (let i = 0; i < 6; i++) {
-            gameScene.time.delayedCall(i * 60, () => {
-                if (this.dead) return;
-                const ghost = gameScene.add.sprite(this.sprite.x, this.sprite.y, this.sprite.texture.key)
-                    .setScale(this.sprite.scaleX).setFlipX(!this.facingRight).setDepth(8).setTint(0xff2200).setAlpha(0.4);
-                gameScene.tweens.add({ targets: ghost, alpha: 0, duration: 300, onComplete: () => ghost.destroy() });
-            });
-        }
-        gameScene.cameras.main.shake(80, 0.004);
-    }
-}
-
-// ============================================================
 //  PROJECTILES
 // ============================================================
 function updateProjectiles(delta) {
@@ -1150,7 +625,7 @@ function updateProjectiles(delta) {
 // ============================================================
 function createHUD(scene) {
     const z = 1.6;
-    scene.add.text(16, 16, 'A/D Move  W/SPACE Jump(x2)  SHIFT Dash  X Attack  C Parry', {
+    scene.add.text(16, 16, 'A/D Move  W/SPACE Jump(x2)  SHIFT Dash  X Attack(Combo)  C Parry', {
         fontFamily: 'monospace', fontSize: '10px', color: '#445566'
     }).setDepth(100).setScrollFactor(0);
     scene.add.text(W / z - 16, 16, "RONIN'S REDEMPTION", {
@@ -1160,6 +635,8 @@ function createHUD(scene) {
     hpText = scene.add.text(92, 37, '100', { fontFamily: 'monospace', fontSize: '8px', color: '#ffffff' }).setOrigin(0.5, 0.5).setDepth(102).setScrollFactor(0);
     scene.comboText = scene.add.text(W/z/2, H/z - 40, '', { fontFamily: 'monospace', fontSize: '18px', color: '#fff', fontStyle: 'bold' }).setOrigin(0.5).setDepth(100).setAlpha(0).setScrollFactor(0);
     scene.parryText = scene.add.text(W/z/2, H/z - 65, '', { fontFamily: 'monospace', fontSize: '14px', color: '#00ffaa', fontStyle: 'bold' }).setOrigin(0.5).setDepth(100).setAlpha(0).setScrollFactor(0);
+    // Combo counter display
+    scene.comboCountText = scene.add.text(W/z - 16, 50, '', { fontFamily: 'monospace', fontSize: '12px', color: '#ff8844', fontStyle: 'bold' }).setOrigin(1, 0).setDepth(100).setScrollFactor(0).setAlpha(0);
     drawPlayerHP();
 }
 
@@ -1189,18 +666,21 @@ function drawPlayerHP() {
 function updateHUD() { drawPlayerHP(); }
 
 // ============================================================
-//  PLAYER ANIMATION (3x3 = 9 frames)
+//  PLAYER ANIMATION (4 cols x 3 rows = 12 frames)
+//  Row 0: idle (0,1,2,3)   Row 1: run (4,5,6,7)   Row 2: attack (8,9,10,11)
 // ============================================================
 const ANIMS = {
-    idle:      { frames: [0, 1, 2], fps: 6, loop: true },    // Slow breathing (6 fps)
-    run:       { frames: [3, 4, 5], fps: 9, loop: true },
-    attack:    { frames: [6, 7, 8], fps: 12, loop: false },
-    jump:      { frames: [3], fps: 1, loop: false },
-    fall:      { frames: [4], fps: 1, loop: false },
-    wallslide: { frames: [5], fps: 1, loop: false },
-    dash:      { frames: [6], fps: 1, loop: false },
+    idle:      { frames: [0, 1, 2, 3], fps: 6, loop: true },
+    run:       { frames: [4, 5, 6, 7], fps: 10, loop: true },
+    attack1:   { frames: [8, 9], fps: 12, loop: false },
+    attack2:   { frames: [9, 10], fps: 12, loop: false },
+    attack3:   { frames: [10, 11], fps: 12, loop: false },
+    runattack: { frames: [8, 9, 10], fps: 14, loop: false },
+    jump:      { frames: [4], fps: 1, loop: false },
+    fall:      { frames: [5], fps: 1, loop: false },
+    dash:      { frames: [8], fps: 1, loop: false },
     parry:     { frames: [1], fps: 1, loop: false },
-    death:     { frames: [6, 7, 8], fps: 3, loop: false }
+    death:     { frames: [8, 9, 10, 11], fps: 3, loop: false }
 };
 
 function playAnim(name) {
@@ -1231,27 +711,20 @@ function playerDeath() {
     playerDead = true;
     playerHP = 0; updateHUD();
     playDeathSound();
-
     playAnim('death');
     player.body.setVelocityX(0);
     player.body.setVelocityY(0);
 
-    // Red flash
     const fl = gameScene.add.rectangle(W/2, H/2, W * 2, H * 2, 0xff0000, 0.4).setDepth(200).setScrollFactor(0);
     gameScene.tweens.add({ targets: fl, alpha: 0.1, duration: 1000 });
     deathUI.push(fl);
 
-    // Dark overlay
     const overlay = gameScene.add.rectangle(W/2, H/2, W * 2, H * 2, 0x000000, 0).setDepth(199).setScrollFactor(0);
     gameScene.tweens.add({ targets: overlay, alpha: 0.6, duration: 1500, ease: 'Sine.easeIn' });
     deathUI.push(overlay);
 
-    // Player collapse
-    gameScene.tweens.add({
-        targets: player, alpha: 0.3, scaleY: player.scaleY * 0.3, duration: 800, ease: 'Power2'
-    });
+    gameScene.tweens.add({ targets: player, alpha: 0.3, scaleY: player.scaleY * 0.3, duration: 800, ease: 'Power2' });
 
-    // Blood splatter
     for (let i = 0; i < 10; i++) {
         const px = player.x + Phaser.Math.Between(-20, 20), py = player.y + Phaser.Math.Between(-10, 20);
         const blood = gameScene.add.circle(px, py, Phaser.Math.Between(1, 4), 0x880000, 0.8).setDepth(15);
@@ -1260,47 +733,35 @@ function playerDeath() {
     }
 
     const z = 1.6;
-
-    // "YOU DIED" — Gothic, centered, blood red, slow fadeIn
     const dt = gameScene.add.text(W/z/2, H/z/2 - 5, 'YOU DIED', {
-        fontFamily: 'Georgia, "Times New Roman", serif',
-        fontSize: '40px',
-        color: '#8b0000',
-        fontStyle: 'bold',
-        stroke: '#2a0000',
-        strokeThickness: 4,
+        fontFamily: 'Georgia, "Times New Roman", serif', fontSize: '40px', color: '#8b0000', fontStyle: 'bold',
+        stroke: '#2a0000', strokeThickness: 4,
         shadow: { offsetX: 3, offsetY: 3, color: '#000000', blur: 15, stroke: true, fill: true }
     }).setOrigin(0.5).setDepth(210).setScrollFactor(0).setAlpha(0).setScale(0.7);
-
     gameScene.tweens.add({
         targets: dt, alpha: 1, scaleX: 1.05, scaleY: 1.05, duration: 2500, ease: 'Sine.easeInOut',
-        onComplete: () => {
-            gameScene.tweens.add({ targets: dt, alpha: 0.6, duration: 1800, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
-        }
+        onComplete: () => { gameScene.tweens.add({ targets: dt, alpha: 0.6, duration: 1800, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' }); }
     });
     deathUI.push(dt);
 
-    // Decorative line
     const lineGfx = gameScene.add.graphics().setDepth(210).setScrollFactor(0).setAlpha(0);
     lineGfx.lineStyle(1, 0x8b0000, 0.5);
     lineGfx.lineBetween(W/z/2 - 90, H/z/2 + 18, W/z/2 + 90, H/z/2 + 18);
     gameScene.tweens.add({ targets: lineGfx, alpha: 1, duration: 3000, delay: 500 });
     deathUI.push(lineGfx);
 
-    // "Click to retry" subtitle
     const rt = gameScene.add.text(W/z/2, H/z/2 + 32, 'Tekrar Denemek Icin Tiklayin', {
         fontFamily: 'Georgia, serif', fontSize: '10px', color: '#666655', fontStyle: 'italic'
     }).setOrigin(0.5).setDepth(210).setScrollFactor(0).setAlpha(0);
     gameScene.tweens.add({ targets: rt, alpha: 0.8, duration: 1000, delay: 2800 });
     deathUI.push(rt);
 
-    // Click to revive
     gameScene.time.delayedCall(1500, () => {
         const reviveHandler = () => {
             playerDead = false;
             playerHP = playerMaxHP; playerHurtTimer = PLAYER_HURT_IFRAMES; updateHUD();
             player.setAlpha(1).clearTint().setScale(CHAR_SCALE);
-            player.setPosition(currentRoom==='boss'?80:400, 550);
+            player.setPosition(400, 550);
             player.body.setVelocity(0, 0);
             deathUI.forEach(obj => { if (obj && obj.destroy) obj.destroy(); });
             deathUI = [];
@@ -1311,14 +772,12 @@ function playerDeath() {
 }
 
 // ============================================================
-//  UPDATE
+//  UPDATE LOOP
 // ============================================================
 function update(time, delta) {
     if (!player || !player.body) return;
     if (playerDead) { updateAnimation(delta); return; }
     if (playerHP <= 0) return;
-    if (transitioning) return;
-    if (dialogActive) return;
 
     emberTimer -= delta;
     if (emberTimer <= 0) { spawnEmber(gameScene); emberTimer = Phaser.Math.Between(80, 200); }
@@ -1339,14 +798,6 @@ function update(time, delta) {
     updateParry(delta);
     if (comboTimer > 0) { comboTimer -= delta; if (comboTimer <= 0) resetCombo(); }
 
-    // Portal check
-    if (currentRoom === 'main' && portalZone && !transitioning) {
-        if (player.x > 1210 && player.y > 540 && player.y < 720) {
-            transitionToRoom('boss');
-            return;
-        }
-    }
-
     if (isAttacking) {
         attackTimer -= delta; updateAnimation(delta);
         if (attackTimer <= 0) { isAttacking = false; clearSlash(); }
@@ -1355,8 +806,6 @@ function update(time, delta) {
 
     const body = player.body;
     const onGround = body.blocked.down || body.touching.down;
-    const onL = body.blocked.left, onR = body.blocked.right;
-    onWall = !onGround && (onL || onR);
 
     if (onGround) { jumpCount = 0; coyoteTimer = COYOTE_TIME; }
     else if (coyoteTimer > 0) coyoteTimer -= delta;
@@ -1368,15 +817,9 @@ function update(time, delta) {
     const mR = keys.D.isDown || cursors.right.isDown;
     const wantJump = Phaser.Input.Keyboard.JustDown(keys.SPACE) || Phaser.Input.Keyboard.JustDown(cursors.up) || Phaser.Input.Keyboard.JustDown(keys.W);
     const holdJump = keys.W.isDown || keys.SPACE.isDown || cursors.up.isDown;
+    const isMoving = mL || mR;
 
-    if (onWall && !onGround) {
-        wallDirection = onL ? -1 : 1;
-        if (body.velocity.y > WALL_SLIDE) body.setVelocityY(WALL_SLIDE);
-        jumpCount = 0;
-        if (mL && !onL) { body.setVelocityX(-MOVE_SPEED); facingRight = false; }
-        else if (mR && !onR) { body.setVelocityX(MOVE_SPEED); facingRight = true; }
-        else body.setVelocityX(0);
-    } else if (!isParrying) {
+    if (!isParrying) {
         if (mL) { body.setVelocityX(-MOVE_SPEED); facingRight = false; }
         else if (mR) { body.setVelocityX(MOVE_SPEED); facingRight = true; }
         else {
@@ -1391,21 +834,19 @@ function update(time, delta) {
     if (wantJump) jumpBufferTimer = JUMP_BUFFER;
     if (holdJump && onGround && jumpCount === 0 && jumpBufferTimer <= 0) jumpBufferTimer = JUMP_BUFFER;
     if (jumpBufferTimer > 0) {
-        if (onWall && !onGround) { body.setVelocityX((wallDirection===-1?1:-1)*WALL_JUMP_X); body.setVelocityY(WALL_JUMP_Y); facingRight=wallDirection===-1; jumpCount=0; onWall=false; jumpBufferTimer=0; }
-        else if (onGround||coyoteTimer>0) { body.setVelocityY(JUMP_FORCE); jumpCount=1; jumpBufferTimer=0; coyoteTimer=0; }
-        else if (jumpCount>0&&jumpCount<maxJumps) { body.setVelocityY(DOUBLE_JUMP_FORCE); jumpCount=maxJumps; jumpBufferTimer=0; spawnJumpPuff(gameScene,player.x,player.y+30); }
+        if (onGround || coyoteTimer > 0) { body.setVelocityY(JUMP_FORCE); jumpCount=1; jumpBufferTimer=0; coyoteTimer=0; }
+        else if (jumpCount > 0 && jumpCount < maxJumps) { body.setVelocityY(DOUBLE_JUMP_FORCE); jumpCount=maxJumps; jumpBufferTimer=0; spawnJumpPuff(gameScene, player.x, player.y+30); }
     }
 
     if (!isAttacking && !isDashing && !isParrying) {
-        if (onWall && !onGround) playAnim('wallslide');
-        else if (!onGround) { body.velocity.y < 0 ? playAnim('jump') : playAnim('fall'); }
-        else if (mL || mR) playAnim('run');
+        if (!onGround) { body.velocity.y < 0 ? playAnim('jump') : playAnim('fall'); }
+        else if (isMoving) playAnim('run');
         else playAnim('idle');
     }
     updateAnimation(delta);
 
     if (Phaser.Input.Keyboard.JustDown(keys.SHIFT) && canDash && !isDashing) startDash(gameScene);
-    if (Phaser.Input.Keyboard.JustDown(keys.X)) triggerAttack();
+    if (Phaser.Input.Keyboard.JustDown(keys.X)) triggerAttack(isMoving);
     if (Phaser.Input.Keyboard.JustDown(keys.C)) triggerParry();
 }
 
@@ -1418,35 +859,67 @@ function spawnJumpPuff(scene, x, y) {
 }
 
 // ============================================================
-//  COMBAT
+//  COMBAT — COMBO SYSTEM
+//  X key: attack. 3x within 1 second = 3-hit combo.
+//  A/D + X = run-attack (dash cut)
 // ============================================================
-function triggerAttack() {
-    if (!canAttack || isDashing || isParrying || playerHP <= 0 || playerDead || dialogActive) return;
+function triggerAttack(isMoving) {
+    if (!canAttack || isDashing || isParrying || playerHP <= 0 || playerDead) return;
     isAttacking = true; canAttack = false;
-    const step = comboStep % 3, atk = ATTACKS[step], dir = facingRight ? 1 : -1;
-    playAnim('attack'); attackTimer = atk.dur;
+
+    const dir = facingRight ? 1 : -1;
+    let atk, animName;
+
+    if (isMoving) {
+        // Run-attack: special dash-cut when moving
+        atk = RUN_ATTACK;
+        animName = 'runattack';
+        comboStep = 0; comboTimer = 0; // Reset combo on run-attack
+    } else {
+        // Standing combo: X pressed within COMBO_WINDOW triggers next step
+        const step = comboStep % 3;
+        atk = ATTACKS[step];
+        animName = 'attack' + (step + 1);
+        comboStep = step + 1;
+        comboTimer = COMBO_WINDOW;
+    }
+
+    playAnim(animName);
+    attackTimer = atk.dur;
     playSlashSound();
+
     const hx = player.x + atk.hb.ox * dir, hy = player.y + atk.hb.oy;
-    drawBladeTrail(gameScene, hx, hy, atk, dir, step);
-    spawnEnergyWave(gameScene, hx, hy, atk, dir, step);
-    spawnBladeParticles(gameScene, hx, hy, dir, step);
+    drawBladeTrail(gameScene, hx, hy, atk, dir, comboStep - 1);
+    spawnEnergyWave(gameScene, hx, hy, atk, dir, comboStep - 1);
+    spawnBladeParticles(gameScene, hx, hy, dir, comboStep - 1);
     player.body.setVelocityX(dir * atk.lunge);
+
     enemies.forEach(e => {
         if (e.dead || e.hurtTimer > 0) return;
-        const hitRange = e instanceof BossOni ? atk.hb.w + 40 : atk.hb.w;
-        const hitH = e instanceof BossOni ? atk.hb.h + 60 : atk.hb.h + 20;
+        const hitRange = atk.hb.w;
+        const hitH = atk.hb.h + 20;
         if (Math.abs(e.sprite.x - hx) < hitRange && Math.abs(e.sprite.y - hy) < hitH) {
             if (e.canTakeDamage(dir)) e.takeDamage(atk.dmg, dir);
         }
     });
+
     hitstopTimer = HITSTOP_MS;
     player.setTint(0xffffff);
-    gameScene.time.delayedCall(HITSTOP_MS + 40, () => { if (!isParrying && !onWall && playerHurtTimer <= 0) player.clearTint(); });
+    gameScene.time.delayedCall(HITSTOP_MS + 40, () => { if (!isParrying && playerHurtTimer <= 0) player.clearTint(); });
     gameScene.cameras.main.shake(80, atk.shake);
-    const colors = ['#eeeeff', '#ff8899', '#ff3322'];
-    gameScene.comboText.setText(atk.name).setColor(colors[step]).setAlpha(1).setScale(step === 2 ? 1.5 : 1.1);
+
+    // Show combo name with color coding
+    const colors = ['#eeeeff', '#ff8899', '#ff3322', '#ffaa00'];
+    const colorIdx = isMoving ? 3 : (comboStep - 1);
+    gameScene.comboText.setText(atk.name).setColor(colors[colorIdx]).setAlpha(1).setScale(comboStep >= 3 || isMoving ? 1.5 : 1.1);
     gameScene.tweens.add({ targets: gameScene.comboText, alpha: 0, duration: 700, ease: 'Power2' });
-    comboStep = step + 1; comboTimer = COMBO_WINDOW;
+
+    // Show combo counter for multi-hits
+    if (comboStep >= 2 && !isMoving) {
+        gameScene.comboCountText.setText(comboStep + ' HIT COMBO!').setAlpha(1);
+        gameScene.tweens.add({ targets: gameScene.comboCountText, alpha: 0, duration: 1200, ease: 'Power2' });
+    }
+
     gameScene.time.delayedCall(atk.dur + atk.cd, () => { canAttack = true; });
     if (comboStep >= 3) gameScene.time.delayedCall(atk.dur + 50, () => resetCombo());
 }
@@ -1509,7 +982,7 @@ function spawnDashGhost(scene) {
 //  PARRY
 // ============================================================
 function triggerParry() {
-    if(parryCooldown>0||isParrying||isDashing||isAttacking||playerHP<=0||playerDead||dialogActive) return;
+    if(parryCooldown>0||isParrying||isDashing||isAttacking||playerHP<=0||playerDead) return;
     isParrying=true; parryTimer=PARRY_TOTAL; parryWindow=PARRY_ACTIVE; parryCooldown=PARRY_CD;
     player.body.setVelocityX(0); playAnim('parry'); player.setTint(0x00ffaa);
     const dir=facingRight?1:-1; parryFlash=gameScene.add.graphics().setDepth(12);
