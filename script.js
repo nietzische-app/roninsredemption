@@ -7,7 +7,7 @@
 const W = 1280, H = 720;
 const config = {
     type: Phaser.AUTO, width: W, height: H,
-    backgroundColor: '#05050a',
+    backgroundColor: '#0a0808',
     physics: { default: 'arcade', arcade: { gravity: { y: 1400 }, debug: false } },
     scene: { preload, create, update },
     pixelArt: true,
@@ -72,7 +72,7 @@ let killCountText = null;
 // ===================== SPRITE SHEET GRID =====================
 const PLAYER_COLS = 3, PLAYER_ROWS = 3;
 const ENEMY_COLS = 4, ENEMY_ROWS = 4;
-const CHAR_SCALE = 0.75;
+const CHAR_SCALE = 0.55;
 
 // ===================== TUNING =====================
 const maxJumps = 2;
@@ -375,7 +375,7 @@ function buildRoom(scene, roomName) {
     walls = scene.physics.add.staticGroup();
 
     if (roomName === 'main') {
-        const bg = scene.add.image(W / 2, H / 2, 'bg_castle').setDepth(0).setDisplaySize(W, H);
+        const bg = scene.add.image(W / 2, H / 2, 'bg_castle').setDepth(0).setDisplaySize(W + 20, H + 20);
         roomObjects.push(bg);
         drawFog(scene);
 
@@ -429,7 +429,7 @@ function buildRoom(scene, roomName) {
         spawnEnemy(EnemyOni, 640, 410);
 
     } else if (roomName === 'boss') {
-        const bg = scene.add.image(W / 2, H / 2, 'bg_boss').setDepth(0).setDisplaySize(W, H);
+        const bg = scene.add.image(W / 2, H / 2, 'bg_boss').setDepth(0).setDisplaySize(W + 20, H + 20);
         roomObjects.push(bg);
         drawFog(scene);
 
@@ -943,7 +943,7 @@ class EnemyOni extends Enemy {
     constructor(scene, x, y) {
         super(scene, x, y, {
             prefix: 'oni_f', label: 'ONI', labelColor: '#cc66ff',
-            hp: 120, scale: 0.60, attackDmg: 18, knockback: 280,
+            hp: 120, scale: 0.42, attackDmg: 18, knockback: 280,
             speed: 110, chaseRange: 300, attackRange: 55,
             attackDur: 550, attackCooldown: 1300,
             bodyWRatio: 0.30, bodyHRatio: 0.50, bodyYOffset: 0.30,
@@ -972,7 +972,7 @@ class EnemyArcher extends Enemy {
     constructor(scene, x, y) {
         super(scene, x, y, {
             prefix: 'archer_f', label: 'ARCHER', labelColor: '#44cc44',
-            hp: 70, scale: 0.55, attackDmg: 10, knockback: 200,
+            hp: 70, scale: 0.38, attackDmg: 10, knockback: 200,
             speed: 130, chaseRange: 400, attackRange: 250, fleeRange: 100,
             attackDur: 600, attackCooldown: 1800,
             bodyWRatio: 0.28, bodyHRatio: 0.50, bodyYOffset: 0.30,
@@ -1008,7 +1008,7 @@ class EnemyShield extends Enemy {
     constructor(scene, x, y) {
         super(scene, x, y, {
             prefix: 'shield_f', label: 'SHIELD', labelColor: '#ff6644',
-            hp: 200, scale: 0.65, attackDmg: 20, knockback: 350,
+            hp: 200, scale: 0.45, attackDmg: 20, knockback: 350,
             speed: 55, chaseRange: 250, attackRange: 50,
             attackDur: 700, attackCooldown: 2000,
             bodyWRatio: 0.35, bodyHRatio: 0.55, bodyYOffset: 0.28,
@@ -1049,7 +1049,7 @@ class EnemyAssassin extends Enemy {
     constructor(scene, x, y) {
         super(scene, x, y, {
             prefix: 'assassin_f', label: 'ASSASSIN', labelColor: '#44ddcc',
-            hp: 80, scale: 0.52, attackDmg: 22, knockback: 200,
+            hp: 80, scale: 0.36, attackDmg: 22, knockback: 200,
             speed: 220, chaseRange: 350, attackRange: 45,
             attackDur: 350, attackCooldown: 900,
             bodyWRatio: 0.26, bodyHRatio: 0.50, bodyYOffset: 0.30,
@@ -1084,7 +1084,7 @@ class BossOni extends Enemy {
     constructor(scene, x, y) {
         super(scene, x, y, {
             prefix: 'oni_f', label: '', labelColor: '#ff2222',
-            hp: 600, scale: 1.80, attackDmg: 25, knockback: 400,
+            hp: 600, scale: 1.20, attackDmg: 25, knockback: 400,
             speed: 80, chaseRange: 600, attackRange: 80,
             attackDur: 600, attackCooldown: 1500,
             bodyWRatio: 0.30, bodyHRatio: 0.50, bodyYOffset: 0.30,
@@ -1217,24 +1217,18 @@ function updateProjectiles(delta) {
 //  HUD
 // ============================================================
 function createHUD(scene) {
-    scene.add.text(16, 16, 'A/D Move  W/SPACE Jump(x2)  SHIFT Dash  LClick/X Combo(5-hit)  C Parry', {
-        fontFamily: 'monospace', fontSize: '11px', color: '#445566'
-    }).setDepth(100).setScrollFactor(0);
-    scene.add.text(W - 16, 16, "RONIN'S REDEMPTION", {
-        fontFamily: 'Georgia, serif', fontSize: '18px', color: '#334455', fontStyle: 'bold'
-    }).setOrigin(1, 0).setDepth(100).setScrollFactor(0);
     hpBarGfx = scene.add.graphics().setDepth(101).setScrollFactor(0);
-    hpText = scene.add.text(92, 37, '100', { fontFamily: 'monospace', fontSize: '10px', color: '#ffffff' }).setOrigin(0.5, 0.5).setDepth(102).setScrollFactor(0);
+    hpText = scene.add.text(92, 22, '100', { fontFamily: 'monospace', fontSize: '10px', color: '#ffffff' }).setOrigin(0.5, 0.5).setDepth(102).setScrollFactor(0);
     scene.comboText = scene.add.text(W/2, H - 60, '', { fontFamily: 'monospace', fontSize: '24px', color: '#fff', fontStyle: 'bold' }).setOrigin(0.5).setDepth(100).setAlpha(0).setScrollFactor(0);
     scene.parryText = scene.add.text(W/2, H - 100, '', { fontFamily: 'monospace', fontSize: '18px', color: '#00ffaa', fontStyle: 'bold' }).setOrigin(0.5).setDepth(100).setAlpha(0).setScrollFactor(0);
     scene.comboCountText = scene.add.text(W - 16, 50, '', { fontFamily: 'monospace', fontSize: '14px', color: '#ff8844', fontStyle: 'bold' }).setOrigin(1, 0).setDepth(100).setScrollFactor(0).setAlpha(0);
-    killCountText = scene.add.text(16, 55, '', { fontFamily: 'monospace', fontSize: '9px', color: '#666688' }).setDepth(100).setScrollFactor(0);
+    killCountText = scene.add.text(16, 36, '', { fontFamily: 'monospace', fontSize: '9px', color: '#666688' }).setDepth(100).setScrollFactor(0);
     drawPlayerHP();
 }
 
 function drawPlayerHP() {
     const g = hpBarGfx; g.clear();
-    const bx = 16, by = 30, bw = 160, bh = 14;
+    const bx = 16, by = 14, bw = 160, bh = 14;
     const ratio = Math.max(0, playerHP / playerMaxHP);
     const fillW = Math.floor((bw - 4) * ratio);
     g.fillStyle(0x0a0a1a, 0.85); g.fillRoundedRect(bx, by, bw, bh, 7);
