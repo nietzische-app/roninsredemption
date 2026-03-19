@@ -12,12 +12,28 @@ const config = {
     scene: { preload, create, update },
     pixelArt: true,
     scale: {
-        mode: Phaser.Scale.ENVELOP,
-        autoCenter: Phaser.Scale.CENTER_BOTH,
+        mode: Phaser.Scale.NONE,
         parent: document.body
     }
 };
 const game = new Phaser.Game(config);
+
+// Force canvas to fill entire viewport via JS (CSS selectors can miss Phaser's wrapper)
+function forceFullscreen() {
+    const c = game.canvas;
+    if (c) {
+        c.style.position = 'fixed';
+        c.style.top = '0';
+        c.style.left = '0';
+        c.style.width = '100vw';
+        c.style.height = '100vh';
+        c.style.margin = '0';
+        c.style.padding = '0';
+    }
+}
+window.addEventListener('resize', forceFullscreen);
+game.events.on('ready', forceFullscreen);
+setTimeout(forceFullscreen, 100);
 
 // ===================== STATE =====================
 let player, platforms, walls, cursors, keys, gameScene;
