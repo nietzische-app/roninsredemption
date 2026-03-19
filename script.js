@@ -12,7 +12,7 @@ const config = {
     scene: { preload, create, update },
     pixelArt: true,
     scale: {
-        mode: Phaser.Scale.FIT,
+        mode: Phaser.Scale.ENVELOP,
         autoCenter: Phaser.Scale.CENTER_BOTH,
         parent: document.body
     }
