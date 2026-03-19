@@ -72,7 +72,7 @@ let killCountText = null;
 // ===================== SPRITE SHEET GRID =====================
 const PLAYER_COLS = 3, PLAYER_ROWS = 3;
 const ENEMY_COLS = 4, ENEMY_ROWS = 4;
-const CHAR_SCALE = 0.35;
+const CHAR_SCALE = 0.75;
 
 // ===================== TUNING =====================
 const maxJumps = 2;
@@ -379,31 +379,31 @@ function buildRoom(scene, roomName) {
         roomObjects.push(bg);
         drawFog(scene);
 
-        // ===== PLATFORMS mapped to background architecture =====
+        // ===== VISIBLE PLATFORMS — Japanese themed =====
         // Ground level (full width courtyard floor)
-        makeInvisiblePlatform(scene, 640, 695, 1280, 22);
+        makeVisiblePlatform(scene, 640, 695, 1280, 22, 'ground');
 
         // --- Staircase steps (center stairs going up to palace door) ---
-        makeInvisiblePlatform(scene, 640, 648, 280, 10);   // bottom step
-        makeInvisiblePlatform(scene, 640, 610, 240, 10);   // mid step
-        makeInvisiblePlatform(scene, 640, 572, 200, 10);   // top step
+        makeVisiblePlatform(scene, 640, 648, 280, 12, 'stone');
+        makeVisiblePlatform(scene, 640, 610, 240, 12, 'stone');
+        makeVisiblePlatform(scene, 640, 572, 200, 12, 'stone');
 
         // --- Left stone ledge (left building roof/ledge) ---
-        makeInvisiblePlatform(scene, 180, 540, 200, 10);
-        makeInvisiblePlatform(scene, 120, 430, 160, 10);
+        makeVisiblePlatform(scene, 180, 540, 200, 12, 'wood');
+        makeVisiblePlatform(scene, 120, 430, 160, 12, 'wood');
 
         // --- Right stone ledge (right building roof/ledge) ---
-        makeInvisiblePlatform(scene, 1100, 540, 200, 10);
-        makeInvisiblePlatform(scene, 1160, 430, 160, 10);
+        makeVisiblePlatform(scene, 1100, 540, 200, 12, 'wood');
+        makeVisiblePlatform(scene, 1160, 430, 160, 12, 'wood');
 
         // --- Palace balcony/roof levels ---
-        makeInvisiblePlatform(scene, 640, 455, 380, 10);   // 1st floor balcony
-        makeInvisiblePlatform(scene, 640, 345, 320, 10);   // 2nd floor balcony
-        makeInvisiblePlatform(scene, 640, 255, 260, 10);   // 3rd floor (top pagoda)
+        makeVisiblePlatform(scene, 640, 455, 380, 12, 'balcony');
+        makeVisiblePlatform(scene, 640, 345, 320, 12, 'balcony');
+        makeVisiblePlatform(scene, 640, 255, 260, 12, 'balcony');
 
         // --- Lantern posts (small perches on left/right) ---
-        makeInvisiblePlatform(scene, 330, 590, 60, 8);     // left lantern post
-        makeInvisiblePlatform(scene, 950, 590, 60, 8);     // right lantern post
+        makeVisiblePlatform(scene, 330, 590, 70, 10, 'wood');
+        makeVisiblePlatform(scene, 950, 590, 70, 10, 'wood');
 
         // --- Side walls ---
         makeInvisibleWall(scene, 8, 360, 16, 720);
@@ -434,12 +434,12 @@ function buildRoom(scene, roomName) {
         drawFog(scene);
 
         // Boss arena platforms
-        makeInvisiblePlatform(scene, 640, 695, 1280, 22);
-        makeInvisiblePlatform(scene, 200, 540, 160, 10);
-        makeInvisiblePlatform(scene, 1080, 540, 160, 10);
-        makeInvisiblePlatform(scene, 640, 460, 280, 10);
-        makeInvisiblePlatform(scene, 400, 580, 100, 10);
-        makeInvisiblePlatform(scene, 880, 580, 100, 10);
+        makeVisiblePlatform(scene, 640, 695, 1280, 22, 'ground');
+        makeVisiblePlatform(scene, 200, 540, 160, 12, 'stone');
+        makeVisiblePlatform(scene, 1080, 540, 160, 12, 'stone');
+        makeVisiblePlatform(scene, 640, 460, 280, 12, 'balcony');
+        makeVisiblePlatform(scene, 400, 580, 100, 12, 'wood');
+        makeVisiblePlatform(scene, 880, 580, 100, 12, 'wood');
         makeInvisibleWall(scene, 8, 360, 16, 720);
         makeInvisibleWall(scene, 1272, 360, 16, 720);
 
@@ -451,12 +451,11 @@ function buildRoom(scene, roomName) {
         totalEnemiesInRoom = 1;
 
         // Boss HUD
-        const z = 1.6;
-        bossNameText = scene.add.text(W / z / 2, 50, '⛩ THE GREAT ONI ⛩', {
+        bossNameText = scene.add.text(W / 2, 50, '⛩ THE GREAT ONI ⛩', {
             fontFamily: 'Georgia, serif', fontSize: '13px', color: '#ff4444', fontStyle: 'bold'
         }).setOrigin(0.5).setDepth(102).setScrollFactor(0);
         bossHpGfx = scene.add.graphics().setDepth(101).setScrollFactor(0);
-        bossHpText = scene.add.text(W / z / 2, 69, '', {
+        bossHpText = scene.add.text(W / 2, 69, '', {
             fontFamily: 'monospace', fontSize: '7px', color: '#ffffff'
         }).setOrigin(0.5).setDepth(102).setScrollFactor(0);
     }
@@ -465,11 +464,10 @@ function buildRoom(scene, roomName) {
     scene.physics.add.collider(player, platforms, onLand, null, scene);
     scene.physics.add.collider(player, walls);
 
-    // Camera
-    scene.cameras.main.setZoom(1.6);
-    scene.cameras.main.startFollow(player, true, 0.1, 0.1);
-    scene.cameras.main.setDeadzone(60, 30);
+    // Camera — no zoom, full background visible
+    scene.cameras.main.setZoom(1);
     scene.cameras.main.setBounds(0, 0, W, H);
+    scene.cameras.main.setScroll(0, 0);
 }
 
 // ============================================================
@@ -544,8 +542,7 @@ function openMysticPortal() {
     gameScene.cameras.main.flash(400, 100, 50, 200);
 
     // Announcement
-    const z = 1.6;
-    const ann = gameScene.add.text(W/z/2, H/z/2 - 40, 'ALL ENEMIES SLAIN!', {
+    const ann = gameScene.add.text(W/2, H/2 - 40, 'ALL ENEMIES SLAIN!', {
         fontFamily: 'Georgia, serif', fontSize: '16px', color: '#cc66ff', fontStyle: 'bold',
         stroke: '#220044', strokeThickness: 3
     }).setOrigin(0.5).setDepth(200).setScrollFactor(0).setAlpha(0);
@@ -579,8 +576,7 @@ function showUpgradeSelection() {
     upgradeActive = true;
     gameScene.physics.pause();
 
-    const z = 1.6;
-    const cw = W / z, ch = H / z;
+    const cw = W, ch = H;
 
     // Overlay
     const overlay = gameScene.add.rectangle(cw/2, ch/2, cw, ch, 0x000000, 0).setDepth(300).setScrollFactor(0);
@@ -679,12 +675,11 @@ function selectUpgrade(upg) {
     upgradesPicked++;
 
     // Flash effect
-    const z = 1.6;
-    const flash = gameScene.add.rectangle(W/z/2, H/z/2, W/z, H/z, 0xffffff, 0.4).setDepth(350).setScrollFactor(0);
+    const flash = gameScene.add.rectangle(W/2, H/2, W, H, 0xffffff, 0.4).setDepth(350).setScrollFactor(0);
     gameScene.tweens.add({ targets: flash, alpha: 0, duration: 300, onComplete: () => flash.destroy() });
 
     // Show selected text
-    const sel = gameScene.add.text(W/z/2, H/z/2, upg.name + ' ACQUIRED!', {
+    const sel = gameScene.add.text(W/2, H/2, upg.name + ' ACQUIRED!', {
         fontFamily: 'Georgia, serif', fontSize: '12px', color: '#ffcc44', fontStyle: 'bold'
     }).setOrigin(0.5).setDepth(360).setScrollFactor(0);
     gameScene.tweens.add({ targets: sel, y: sel.y - 30, alpha: 0, duration: 1200, onComplete: () => sel.destroy() });
@@ -698,28 +693,57 @@ function selectUpgrade(upg) {
 // ============================================================
 //  INVISIBLE PLATFORMS
 // ============================================================
-function makeInvisiblePlatform(scene, x, y, w, h) {
-    const key = 'ip_' + x + '_' + y + '_' + currentRoom;
+// Platform visual styles
+const PLAT_STYLES = {
+    ground:  { fill: 0x2a1a0e, border: 0x3d2b1a, highlight: 0x4a3520, alpha: 0.95 },
+    stone:   { fill: 0x1e1e28, border: 0x333345, highlight: 0x44445a, alpha: 0.9 },
+    wood:    { fill: 0x3a2210, border: 0x5a3820, highlight: 0x6a4828, alpha: 0.9 },
+    balcony: { fill: 0x2a1515, border: 0x5a2020, highlight: 0x7a3030, alpha: 0.85 }
+};
+
+function makeVisiblePlatform(scene, x, y, w, h, style) {
+    const st = PLAT_STYLES[style] || PLAT_STYLES.stone;
+    const key = 'vp_' + x + '_' + y + '_' + w + '_' + currentRoom;
     if (!scene.textures.exists(key)) {
         const g = scene.add.graphics();
-        g.fillStyle(0x000000, 0); g.fillRect(0, 0, w, h);
-        g.generateTexture(key, w, h); g.destroy();
+        // Main body
+        g.fillStyle(st.fill, st.alpha);
+        g.fillRoundedRect(0, 0, w, h, Math.min(3, h / 2));
+        // Top highlight line
+        g.lineStyle(1, st.highlight, 0.6);
+        g.lineBetween(2, 1, w - 2, 1);
+        // Bottom border
+        g.lineStyle(1, st.border, 0.5);
+        g.strokeRoundedRect(0, 0, w, h, Math.min(3, h / 2));
+        // Wood grain / stone detail
+        if (w > 40) {
+            g.lineStyle(1, st.highlight, 0.15);
+            for (let lx = 20; lx < w; lx += 30) {
+                g.lineBetween(lx, 2, lx + 8, h - 2);
+            }
+        }
+        g.generateTexture(key, w, h);
+        g.destroy();
     }
     const plat = platforms.create(x, y, key);
-    plat.setAlpha(0);
+    plat.setDepth(3);
     plat.body.setSize(w, h).setOffset(0, 0);
     plat.refreshBody();
+}
+
+function makeInvisiblePlatform(scene, x, y, w, h) {
+    makeVisiblePlatform(scene, x, y, w, h, 'ground');
 }
 
 function makeInvisibleWall(scene, x, y, w, h) {
     const key = 'iw_' + x + '_' + y + '_' + currentRoom;
     if (!scene.textures.exists(key)) {
         const g = scene.add.graphics();
-        g.fillStyle(0x000000, 0); g.fillRect(0, 0, w, h);
+        g.fillStyle(0x1a1020, 0.3); g.fillRect(0, 0, w, h);
         g.generateTexture(key, w, h); g.destroy();
     }
     const wall = walls.create(x, y, key);
-    wall.setAlpha(0);
+    wall.setDepth(3);
     wall.body.setSize(w, h).setOffset(0, 0);
     wall.refreshBody();
 }
@@ -919,7 +943,7 @@ class EnemyOni extends Enemy {
     constructor(scene, x, y) {
         super(scene, x, y, {
             prefix: 'oni_f', label: 'ONI', labelColor: '#cc66ff',
-            hp: 120, scale: 0.28, attackDmg: 18, knockback: 280,
+            hp: 120, scale: 0.60, attackDmg: 18, knockback: 280,
             speed: 110, chaseRange: 300, attackRange: 55,
             attackDur: 550, attackCooldown: 1300,
             bodyWRatio: 0.30, bodyHRatio: 0.50, bodyYOffset: 0.30,
@@ -948,7 +972,7 @@ class EnemyArcher extends Enemy {
     constructor(scene, x, y) {
         super(scene, x, y, {
             prefix: 'archer_f', label: 'ARCHER', labelColor: '#44cc44',
-            hp: 70, scale: 0.26, attackDmg: 10, knockback: 200,
+            hp: 70, scale: 0.55, attackDmg: 10, knockback: 200,
             speed: 130, chaseRange: 400, attackRange: 250, fleeRange: 100,
             attackDur: 600, attackCooldown: 1800,
             bodyWRatio: 0.28, bodyHRatio: 0.50, bodyYOffset: 0.30,
@@ -984,7 +1008,7 @@ class EnemyShield extends Enemy {
     constructor(scene, x, y) {
         super(scene, x, y, {
             prefix: 'shield_f', label: 'SHIELD', labelColor: '#ff6644',
-            hp: 200, scale: 0.30, attackDmg: 20, knockback: 350,
+            hp: 200, scale: 0.65, attackDmg: 20, knockback: 350,
             speed: 55, chaseRange: 250, attackRange: 50,
             attackDur: 700, attackCooldown: 2000,
             bodyWRatio: 0.35, bodyHRatio: 0.55, bodyYOffset: 0.28,
@@ -1025,7 +1049,7 @@ class EnemyAssassin extends Enemy {
     constructor(scene, x, y) {
         super(scene, x, y, {
             prefix: 'assassin_f', label: 'ASSASSIN', labelColor: '#44ddcc',
-            hp: 80, scale: 0.25, attackDmg: 22, knockback: 200,
+            hp: 80, scale: 0.52, attackDmg: 22, knockback: 200,
             speed: 220, chaseRange: 350, attackRange: 45,
             attackDur: 350, attackCooldown: 900,
             bodyWRatio: 0.26, bodyHRatio: 0.50, bodyYOffset: 0.30,
@@ -1060,7 +1084,7 @@ class BossOni extends Enemy {
     constructor(scene, x, y) {
         super(scene, x, y, {
             prefix: 'oni_f', label: '', labelColor: '#ff2222',
-            hp: 600, scale: 0.84, attackDmg: 25, knockback: 400,
+            hp: 600, scale: 1.80, attackDmg: 25, knockback: 400,
             speed: 80, chaseRange: 600, attackRange: 80,
             attackDur: 600, attackCooldown: 1500,
             bodyWRatio: 0.30, bodyHRatio: 0.50, bodyYOffset: 0.30,
@@ -1081,8 +1105,7 @@ class BossOni extends Enemy {
         this.hpGfx.clear();
         if (bossHpGfx) {
             bossHpGfx.clear();
-            const z = 1.6;
-            const bx = (W/z/2) - 120, by = 58, bw = 240, bh = 10;
+            const bx = (W/2) - 120, by = 58, bw = 240, bh = 10;
             const ratio = Math.max(0, this.hp / this.maxHp);
             const fillW = Math.floor((bw - 4) * ratio);
             bossHpGfx.fillStyle(0x1a0000, 0.9); bossHpGfx.fillRoundedRect(bx, by, bw, bh, 5);
@@ -1110,8 +1133,7 @@ class BossOni extends Enemy {
         gameScene.tweens.add({ targets: s, alpha: 0, scaleX: 0, scaleY: 0, duration: 800, ease: 'Power3',
             onComplete: () => { s.destroy(); this.hpGfx.destroy(); this.typeLabel.destroy(); }
         });
-        const z = 1.6;
-        const vt = gameScene.add.text(W/z/2, H/z/2 - 20, 'VICTORY!', { fontFamily: 'Georgia, serif', fontSize: '28px', color: '#ffcc00', fontStyle: 'bold' }).setOrigin(0.5).setDepth(201).setScrollFactor(0).setAlpha(0);
+        const vt = gameScene.add.text(W/2, H/2 - 20, 'VICTORY!', { fontFamily: 'Georgia, serif', fontSize: '28px', color: '#ffcc00', fontStyle: 'bold' }).setOrigin(0.5).setDepth(201).setScrollFactor(0).setAlpha(0);
         gameScene.tweens.add({ targets: vt, alpha: 1, duration: 800, delay: 600 });
         if (bossNameText) bossNameText.setText('DEFEATED');
     }
@@ -1195,19 +1217,18 @@ function updateProjectiles(delta) {
 //  HUD
 // ============================================================
 function createHUD(scene) {
-    const z = 1.6;
-    scene.add.text(16, 16, 'A/D Move  W/SPACE Jump(x2)  SHIFT Dash  X Combo(5-hit)  C Parry', {
-        fontFamily: 'monospace', fontSize: '8px', color: '#445566'
+    scene.add.text(16, 16, 'A/D Move  W/SPACE Jump(x2)  SHIFT Dash  LClick/X Combo(5-hit)  C Parry', {
+        fontFamily: 'monospace', fontSize: '11px', color: '#445566'
     }).setDepth(100).setScrollFactor(0);
-    scene.add.text(W / z - 16, 16, "RONIN'S REDEMPTION", {
-        fontFamily: 'Georgia, serif', fontSize: '13px', color: '#334455', fontStyle: 'bold'
+    scene.add.text(W - 16, 16, "RONIN'S REDEMPTION", {
+        fontFamily: 'Georgia, serif', fontSize: '18px', color: '#334455', fontStyle: 'bold'
     }).setOrigin(1, 0).setDepth(100).setScrollFactor(0);
     hpBarGfx = scene.add.graphics().setDepth(101).setScrollFactor(0);
-    hpText = scene.add.text(92, 37, '100', { fontFamily: 'monospace', fontSize: '8px', color: '#ffffff' }).setOrigin(0.5, 0.5).setDepth(102).setScrollFactor(0);
-    scene.comboText = scene.add.text(W/z/2, H/z - 40, '', { fontFamily: 'monospace', fontSize: '18px', color: '#fff', fontStyle: 'bold' }).setOrigin(0.5).setDepth(100).setAlpha(0).setScrollFactor(0);
-    scene.parryText = scene.add.text(W/z/2, H/z - 65, '', { fontFamily: 'monospace', fontSize: '14px', color: '#00ffaa', fontStyle: 'bold' }).setOrigin(0.5).setDepth(100).setAlpha(0).setScrollFactor(0);
-    scene.comboCountText = scene.add.text(W/z - 16, 50, '', { fontFamily: 'monospace', fontSize: '11px', color: '#ff8844', fontStyle: 'bold' }).setOrigin(1, 0).setDepth(100).setScrollFactor(0).setAlpha(0);
-    killCountText = scene.add.text(16, 48, '', { fontFamily: 'monospace', fontSize: '7px', color: '#666688' }).setDepth(100).setScrollFactor(0);
+    hpText = scene.add.text(92, 37, '100', { fontFamily: 'monospace', fontSize: '10px', color: '#ffffff' }).setOrigin(0.5, 0.5).setDepth(102).setScrollFactor(0);
+    scene.comboText = scene.add.text(W/2, H - 60, '', { fontFamily: 'monospace', fontSize: '24px', color: '#fff', fontStyle: 'bold' }).setOrigin(0.5).setDepth(100).setAlpha(0).setScrollFactor(0);
+    scene.parryText = scene.add.text(W/2, H - 100, '', { fontFamily: 'monospace', fontSize: '18px', color: '#00ffaa', fontStyle: 'bold' }).setOrigin(0.5).setDepth(100).setAlpha(0).setScrollFactor(0);
+    scene.comboCountText = scene.add.text(W - 16, 50, '', { fontFamily: 'monospace', fontSize: '14px', color: '#ff8844', fontStyle: 'bold' }).setOrigin(1, 0).setDepth(100).setScrollFactor(0).setAlpha(0);
+    killCountText = scene.add.text(16, 55, '', { fontFamily: 'monospace', fontSize: '9px', color: '#666688' }).setDepth(100).setScrollFactor(0);
     drawPlayerHP();
 }
 
@@ -1315,8 +1336,7 @@ function playerDeath() {
     player.body.allowGravity = false;
     gameScene.tweens.add({ targets: player, alpha: 0.5, rotation: facingRight ? 1.5 : -1.5, duration: 800, ease: 'Power2' });
 
-    const z = 1.6;
-    const dt = gameScene.add.text(W/z/2, H/z/2 - 5, 'YOU DIED', {
+    const dt = gameScene.add.text(W/2, H/2 - 5, 'YOU DIED', {
         fontFamily: 'Georgia, "Times New Roman", serif', fontSize: '40px', color: '#8b0000', fontStyle: 'bold',
         stroke: '#2a0000', strokeThickness: 4,
         shadow: { offsetX: 3, offsetY: 3, color: '#000000', blur: 15, stroke: true, fill: true }
@@ -1325,7 +1345,7 @@ function playerDeath() {
         onComplete: () => { gameScene.tweens.add({ targets: dt, alpha: 0.6, duration: 1800, yoyo: true, repeat: -1 }); }
     });
     deathUI.push(dt);
-    const rt = gameScene.add.text(W/z/2, H/z/2 + 32, 'Tekrar Denemek Icin Tiklayin', {
+    const rt = gameScene.add.text(W/2, H/2 + 50, 'Tekrar Denemek Icin Tiklayin', {
         fontFamily: 'Georgia, serif', fontSize: '10px', color: '#666655', fontStyle: 'italic'
     }).setOrigin(0.5).setDepth(210).setScrollFactor(0).setAlpha(0);
     gameScene.tweens.add({ targets: rt, alpha: 0.8, duration: 1000, delay: 2800 });
