@@ -397,8 +397,8 @@ function buildRoom(scene, roomName) {
     walls = scene.physics.add.staticGroup();
 
     if (roomName === 'main') {
-        // Oversized background to push dark edges off screen
-        const bg = scene.add.image(W / 2, H / 2 - 10, 'bg_castle').setDepth(0).setDisplaySize(W + 80, H + 80);
+        // Oversized background to cover any aspect ratio stretching
+        const bg = scene.add.image(W / 2, H / 2, 'bg_castle').setDepth(0).setDisplaySize(W * 1.15, H * 1.15);
         roomObjects.push(bg);
         drawFog(scene);
 
@@ -457,7 +457,7 @@ function buildRoom(scene, roomName) {
         spawnEnemy(EnemyArcher, 700, 290);
 
     } else if (roomName === 'boss') {
-        const bg = scene.add.image(W / 2, H / 2 - 10, 'bg_boss').setDepth(0).setDisplaySize(W + 80, H + 80);
+        const bg = scene.add.image(W / 2, H / 2, 'bg_boss').setDepth(0).setDisplaySize(W * 1.15, H * 1.15);
         roomObjects.push(bg);
         drawFog(scene);
 
@@ -492,9 +492,9 @@ function buildRoom(scene, roomName) {
     scene.physics.add.collider(player, platforms, onLand, null, scene);
     scene.physics.add.collider(player, walls);
 
-    // Camera — no zoom, full background visible
+    // Camera — no zoom, no bounds restriction
     scene.cameras.main.setZoom(1);
-    scene.cameras.main.setBounds(0, 0, W, H);
+    scene.cameras.main.removeBounds();
     scene.cameras.main.setScroll(0, 0);
 }
 
