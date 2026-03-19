@@ -397,7 +397,8 @@ function buildRoom(scene, roomName) {
     walls = scene.physics.add.staticGroup();
 
     if (roomName === 'main') {
-        const bg = scene.add.image(W / 2, H / 2, 'bg_castle').setDepth(0).setDisplaySize(W + 20, H + 20);
+        // Oversized background to push dark edges off screen
+        const bg = scene.add.image(W / 2, H / 2 - 10, 'bg_castle').setDepth(0).setDisplaySize(W + 80, H + 80);
         roomObjects.push(bg);
         drawFog(scene);
 
@@ -456,7 +457,7 @@ function buildRoom(scene, roomName) {
         spawnEnemy(EnemyArcher, 700, 290);
 
     } else if (roomName === 'boss') {
-        const bg = scene.add.image(W / 2, H / 2, 'bg_boss').setDepth(0).setDisplaySize(W + 20, H + 20);
+        const bg = scene.add.image(W / 2, H / 2 - 10, 'bg_boss').setDepth(0).setDisplaySize(W + 80, H + 80);
         roomObjects.push(bg);
         drawFog(scene);
 
