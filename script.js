@@ -275,22 +275,28 @@ function create() {
     EnemyAssassin.dims = assassinDims;
     BossOni.dims = oniDims;
 
-    // --- Process wall slide sprite (single image ChromaKey) ---
+    // --- Process wall slide sprite: ChromaKey + resize to match player frame ---
     const wsRaw = this.textures.get('hero_wallslide').getSourceImage();
-    const wsCanvas = document.createElement('canvas');
-    wsCanvas.width = wsRaw.width; wsCanvas.height = wsRaw.height;
-    const wsCtx = wsCanvas.getContext('2d');
-    wsCtx.drawImage(wsRaw, 0, 0);
-    const wsData = wsCtx.getImageData(0, 0, wsCanvas.width, wsCanvas.height);
+    // First pass: full-size ChromaKey
+    const wsFull = document.createElement('canvas');
+    wsFull.width = wsRaw.width; wsFull.height = wsRaw.height;
+    const wsFullCtx = wsFull.getContext('2d');
+    wsFullCtx.drawImage(wsRaw, 0, 0);
+    const wsData = wsFullCtx.getImageData(0, 0, wsFull.width, wsFull.height);
     const wd = wsData.data;
     for (let i = 0; i < wd.length; i += 4) {
         const r = wd[i], g = wd[i+1], b = wd[i+2];
-        if (r > 210 && g > 210 && b > 210) { wd[i+3] = 0; }
-        else if (r > 180 && g > 180 && b > 180 && Math.abs(r-g) < 25 && Math.abs(g-b) < 25) {
+        if (r > 200 && g > 200 && b > 200) { wd[i+3] = 0; }
+        else if (r > 170 && g > 170 && b > 170 && Math.abs(r-g) < 25 && Math.abs(g-b) < 25) {
             const br = (r+g+b)/3; wd[i+3] = Math.min(wd[i+3], Math.max(0, Math.floor((255-br)*3)));
         }
     }
-    wsCtx.putImageData(wsData, 0, 0);
+    wsFullCtx.putImageData(wsData, 0, 0);
+    // Second pass: resize to match samurai frame dimensions
+    const wsCanvas = document.createElement('canvas');
+    wsCanvas.width = samDims.fw; wsCanvas.height = samDims.fh;
+    const wsCtx = wsCanvas.getContext('2d');
+    wsCtx.drawImage(wsFull, 0, 0, samDims.fw, samDims.fh);
     this.textures.remove('hero_wallslide');
     this.textures.addCanvas('hero_wallslide', wsCanvas);
 
@@ -409,24 +415,29 @@ function buildRoom(scene, roomName) {
         makeInvisibleWall(scene, 8, 360, 16, 720);
         makeInvisibleWall(scene, 1272, 360, 16, 720);
 
-        // ===== ENEMIES on platforms =====
-        totalEnemiesInRoom = 6;
+        // ===== ENEMIES — distributed across platforms =====
+        totalEnemiesInRoom = 8;
         const spawnEnemy = (Type, x, y) => {
             const e = new Type(scene, x, y);
             enemies.push(e);
             scene.physics.add.collider(e.sprite, platforms);
             scene.physics.add.collider(e.sprite, walls);
         };
-        // Ground level enemies
-        spawnEnemy(EnemyOni, 850, 640);
-        spawnEnemy(EnemyShield, 450, 640);
-        // On stairs
-        spawnEnemy(EnemyAssassin, 640, 530);
-        // On ledges
+        // Ground level (2 enemies)
+        spawnEnemy(EnemyOni, 900, 640);
+        spawnEnemy(EnemyShield, 350, 640);
+        // On stairs — waiting for player to climb
+        spawnEnemy(EnemyAssassin, 640, 520);
+        // Left wood ledge
         spawnEnemy(EnemyArcher, 180, 490);
+        // Right wood ledge
         spawnEnemy(EnemyArcher, 1100, 490);
-        // On balcony
-        spawnEnemy(EnemyOni, 640, 410);
+        // Lantern post left
+        spawnEnemy(EnemyAssassin, 330, 540);
+        // 1st floor balcony — guarding the palace
+        spawnEnemy(EnemyOni, 580, 400);
+        // 2nd floor balcony — archer with height advantage
+        spawnEnemy(EnemyArcher, 700, 290);
 
     } else if (roomName === 'boss') {
         const bg = scene.add.image(W / 2, H / 2, 'bg_boss').setDepth(0).setDisplaySize(W + 20, H + 20);
@@ -923,10 +934,16 @@ class Enemy {
         return false;
     }
 
-    // Release slot when no longer chasing/attacking
+    // Release slot — only called when truly disengaging
     releaseAttackSlot() {
         const idx = activeAttackers.indexOf(this);
         if (idx !== -1) activeAttackers.splice(idx, 1);
+    }
+
+    // Check distance to player — used for idle behavior
+    distToPlayer() {
+        const dx = player.x - this.sprite.x, dy = player.y - this.sprite.y;
+        return Math.sqrt(dx * dx + dy * dy);
     }
 }
 
@@ -943,7 +960,7 @@ class EnemyOni extends Enemy {
     constructor(scene, x, y) {
         super(scene, x, y, {
             prefix: 'oni_f', label: 'ONI', labelColor: '#cc66ff',
-            hp: 120, scale: 0.42, attackDmg: 18, knockback: 280,
+            hp: 120, scale: 0.55, attackDmg: 18, knockback: 280,
             speed: 110, chaseRange: 300, attackRange: 55,
             attackDur: 550, attackCooldown: 1300,
             bodyWRatio: 0.30, bodyHRatio: 0.50, bodyYOffset: 0.30,
@@ -958,9 +975,17 @@ class EnemyOni extends Enemy {
             if (this.attackTimer < this.config.attackDur*0.3) { s.setTint(0xff6644); if (this.attackTimer < this.config.attackDur*0.25 && this.attackTimer > this.config.attackDur*0.15) this.checkHitPlayer(); }
             if (this.attackTimer <= 0) { this.state='idle'; this.attackCd=this.config.attackCooldown; s.clearTint(); this.releaseAttackSlot(); }
             s.body.setVelocityX(0);
-        } else if (dist < this.config.attackRange && this.attackCd <= 0 && this.isActiveAttacker()) { this.state='attack'; this.attackTimer=this.config.attackDur; s.body.setVelocityX(0); }
-        else if (dist < this.config.chaseRange && this.isActiveAttacker()) { this.state='chase'; this.playAnim('walk'); s.body.setVelocityX((dx>0?1:-1)*this.config.speed); }
-        else { this.state='idle'; this.playAnim('idle'); s.body.setVelocityX(0); this.releaseAttackSlot(); }
+        } else if (dist > this.config.chaseRange * 1.5) {
+            // Truly out of range — release slot and idle
+            this.state='idle'; this.playAnim('idle'); s.body.setVelocityX(0); this.releaseAttackSlot();
+        } else if (dist < this.config.attackRange && this.attackCd <= 0 && this.isActiveAttacker()) {
+            this.state='attack'; this.attackTimer=this.config.attackDur; s.body.setVelocityX(0);
+        } else if (dist < this.config.chaseRange && this.isActiveAttacker()) {
+            this.state='chase'; this.playAnim('walk'); s.body.setVelocityX((dx>0?1:-1)*this.config.speed);
+        } else {
+            // In range but no slot — stand guard, don't chase
+            this.state='idle'; this.playAnim('idle'); s.body.setVelocityX(0);
+        }
     }
 }
 
@@ -972,7 +997,7 @@ class EnemyArcher extends Enemy {
     constructor(scene, x, y) {
         super(scene, x, y, {
             prefix: 'archer_f', label: 'ARCHER', labelColor: '#44cc44',
-            hp: 70, scale: 0.38, attackDmg: 10, knockback: 200,
+            hp: 70, scale: 0.50, attackDmg: 10, knockback: 200,
             speed: 130, chaseRange: 400, attackRange: 250, fleeRange: 100,
             attackDur: 600, attackCooldown: 1800,
             bodyWRatio: 0.28, bodyHRatio: 0.50, bodyYOffset: 0.30,
@@ -983,11 +1008,16 @@ class EnemyArcher extends Enemy {
     updateAI(delta) {
         const s = this.sprite, dx = player.x - s.x, dist = Math.sqrt(dx*dx + (player.y-s.y)**2);
         if (dist < this.config.fleeRange) { this.state='flee'; this.playAnim('flee'); s.body.setVelocityX((dx>0?-1:1)*this.config.speed*1.3); }
-        else if (dist < this.config.attackRange && this.attackCd <= 0 && this.isActiveAttacker()) {
+        else if (dist > this.config.chaseRange * 1.5) {
+            this.state='idle'; this.playAnim('idle'); s.body.setVelocityX(0); this.releaseAttackSlot();
+        } else if (dist < this.config.attackRange && this.attackCd <= 0 && this.isActiveAttacker()) {
             this.state='shoot'; this.playAnim('shoot'); s.body.setVelocityX(0); this.attackCd=this.config.attackCooldown;
             gameScene.time.delayedCall(300, () => { if (!this.dead) { this.fireArrow(); this.releaseAttackSlot(); } });
-        } else if (dist < this.config.chaseRange && dist > this.config.attackRange*0.8 && this.isActiveAttacker()) { this.state='chase'; this.playAnim('walk'); s.body.setVelocityX((dx>0?1:-1)*this.config.speed*0.7); }
-        else { this.state='idle'; this.playAnim('idle'); s.body.setVelocityX(0); this.releaseAttackSlot(); }
+        } else if (dist < this.config.chaseRange && dist > this.config.attackRange*0.8 && this.isActiveAttacker()) {
+            this.state='chase'; this.playAnim('walk'); s.body.setVelocityX((dx>0?1:-1)*this.config.speed*0.7);
+        } else {
+            this.state='idle'; this.playAnim('idle'); s.body.setVelocityX(0);
+        }
     }
     fireArrow() {
         playArrowSound(); const dir = this.facingRight?1:-1;
@@ -1008,7 +1038,7 @@ class EnemyShield extends Enemy {
     constructor(scene, x, y) {
         super(scene, x, y, {
             prefix: 'shield_f', label: 'SHIELD', labelColor: '#ff6644',
-            hp: 200, scale: 0.45, attackDmg: 20, knockback: 350,
+            hp: 200, scale: 0.55, attackDmg: 20, knockback: 350,
             speed: 55, chaseRange: 250, attackRange: 50,
             attackDur: 700, attackCooldown: 2000,
             bodyWRatio: 0.35, bodyHRatio: 0.55, bodyYOffset: 0.28,
@@ -1035,9 +1065,15 @@ class EnemyShield extends Enemy {
             if (this.attackTimer < this.config.attackDur*0.3) { s.setTint(0xff6644); if (this.attackTimer < this.config.attackDur*0.25 && this.attackTimer > this.config.attackDur*0.15) this.checkHitPlayer(); }
             if (this.attackTimer <= 0) { this.state='idle'; this.attackCd=this.config.attackCooldown; s.clearTint(); this.releaseAttackSlot(); }
             s.body.setVelocityX(0);
-        } else if (dist < this.config.attackRange && this.attackCd <= 0 && this.isActiveAttacker()) { this.state='attack'; this.attackTimer=this.config.attackDur; s.body.setVelocityX(0); }
-        else if (dist < this.config.chaseRange && this.isActiveAttacker()) { this.state='chase'; this.playAnim('walk'); s.body.setVelocityX((dx>0?1:-1)*this.config.speed); }
-        else { this.state='idle'; this.playAnim('idle'); s.body.setVelocityX(0); this.releaseAttackSlot(); }
+        } else if (dist > this.config.chaseRange * 1.5) {
+            this.state='idle'; this.playAnim('idle'); s.body.setVelocityX(0); this.releaseAttackSlot();
+        } else if (dist < this.config.attackRange && this.attackCd <= 0 && this.isActiveAttacker()) {
+            this.state='attack'; this.attackTimer=this.config.attackDur; s.body.setVelocityX(0);
+        } else if (dist < this.config.chaseRange && this.isActiveAttacker()) {
+            this.state='chase'; this.playAnim('walk'); s.body.setVelocityX((dx>0?1:-1)*this.config.speed);
+        } else {
+            this.state='idle'; this.playAnim('idle'); s.body.setVelocityX(0);
+        }
     }
 }
 
@@ -1049,7 +1085,7 @@ class EnemyAssassin extends Enemy {
     constructor(scene, x, y) {
         super(scene, x, y, {
             prefix: 'assassin_f', label: 'ASSASSIN', labelColor: '#44ddcc',
-            hp: 80, scale: 0.36, attackDmg: 22, knockback: 200,
+            hp: 80, scale: 0.50, attackDmg: 22, knockback: 200,
             speed: 220, chaseRange: 350, attackRange: 45,
             attackDur: 350, attackCooldown: 900,
             bodyWRatio: 0.26, bodyHRatio: 0.50, bodyYOffset: 0.30,
@@ -1070,9 +1106,15 @@ class EnemyAssassin extends Enemy {
             if (this.attackTimer < this.config.attackDur*0.35) { s.setTint(0x44ddcc); if (this.attackTimer < this.config.attackDur*0.3 && this.attackTimer > this.config.attackDur*0.15) this.checkHitPlayer(); }
             if (this.attackTimer <= 0) { this.state='idle'; this.attackCd=this.config.attackCooldown; s.clearTint(); this.releaseAttackSlot(); }
             s.body.setVelocityX(0);
-        } else if (dist < this.config.attackRange && this.attackCd <= 0 && !this.isInvisible && this.isActiveAttacker()) { this.state='attack'; this.attackTimer=this.config.attackDur; s.body.setVelocityX(0); }
-        else if (dist < this.config.chaseRange && this.isActiveAttacker()) { this.state='chase'; this.playAnim(this.isInvisible?'vanish':'run'); s.body.setVelocityX((dx>0?1:-1)*this.config.speed); }
-        else { this.state='idle'; this.playAnim(this.isInvisible?'vanish':'idle'); s.body.setVelocityX(0); this.releaseAttackSlot(); }
+        } else if (dist > this.config.chaseRange * 1.5) {
+            this.state='idle'; this.playAnim(this.isInvisible?'vanish':'idle'); s.body.setVelocityX(0); this.releaseAttackSlot();
+        } else if (dist < this.config.attackRange && this.attackCd <= 0 && !this.isInvisible && this.isActiveAttacker()) {
+            this.state='attack'; this.attackTimer=this.config.attackDur; s.body.setVelocityX(0);
+        } else if (dist < this.config.chaseRange && this.isActiveAttacker()) {
+            this.state='chase'; this.playAnim(this.isInvisible?'vanish':'run'); s.body.setVelocityX((dx>0?1:-1)*this.config.speed);
+        } else {
+            this.state='idle'; this.playAnim(this.isInvisible?'vanish':'idle'); s.body.setVelocityX(0);
+        }
     }
 }
 
