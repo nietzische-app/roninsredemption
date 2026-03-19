@@ -28,6 +28,7 @@ let isParrying = false, parryTimer = 0, parryWindow = 0, parryCooldown = 0, parr
 let slashGfx = [], emberTimer = 0, playerGlow;
 let coyoteTimer = 0, jumpBufferTimer = 0;
 let playerDead = false;
+let playerDeadFrozen = false; // true once death anim finishes — locks all anims
 
 // ===================== ENEMY / ROOM STATE =====================
 let enemies = [];
@@ -41,6 +42,10 @@ let boss = null;
 let bossHpGfx = null, bossHpText = null, bossNameText = null;
 let roomObjects = [];
 let totalComboHits = 0, comboDisplayTimer = 0;
+
+// ===================== PARTY SYSTEM =====================
+const MAX_ACTIVE_ATTACKERS = 3;
+let activeAttackers = []; // enemies currently allowed to chase/attack
 
 // ===================== PORTAL STATE =====================
 let portalActive = false;
@@ -248,6 +253,7 @@ function preload() {
     this.load.image('archer_raw', 'enemy__archer.jpg');
     this.load.image('shield_raw', 'enemy_shield.jpg');
     this.load.image('assassin_raw', 'enemy_assasin.jpg');
+    this.load.image('hero_wallslide', 'hero_wall_slide.jpg');
 }
 
 // ============================================================
@@ -268,6 +274,25 @@ function create() {
     EnemyShield.dims = shieldDims;
     EnemyAssassin.dims = assassinDims;
     BossOni.dims = oniDims;
+
+    // --- Process wall slide sprite (single image ChromaKey) ---
+    const wsRaw = this.textures.get('hero_wallslide').getSourceImage();
+    const wsCanvas = document.createElement('canvas');
+    wsCanvas.width = wsRaw.width; wsCanvas.height = wsRaw.height;
+    const wsCtx = wsCanvas.getContext('2d');
+    wsCtx.drawImage(wsRaw, 0, 0);
+    const wsData = wsCtx.getImageData(0, 0, wsCanvas.width, wsCanvas.height);
+    const wd = wsData.data;
+    for (let i = 0; i < wd.length; i += 4) {
+        const r = wd[i], g = wd[i+1], b = wd[i+2];
+        if (r > 210 && g > 210 && b > 210) { wd[i+3] = 0; }
+        else if (r > 180 && g > 180 && b > 180 && Math.abs(r-g) < 25 && Math.abs(g-b) < 25) {
+            const br = (r+g+b)/3; wd[i+3] = Math.min(wd[i+3], Math.max(0, Math.floor((255-br)*3)));
+        }
+    }
+    wsCtx.putImageData(wsData, 0, 0);
+    this.textures.remove('hero_wallslide');
+    this.textures.addCanvas('hero_wallslide', wsCanvas);
 
     // --- PLAYER ---
     player = this.physics.add.sprite(200, 550, 'sam_f0');
@@ -298,7 +323,17 @@ function create() {
         SHIFT: this.input.keyboard.addKey('SHIFT'),
         X: this.input.keyboard.addKey('X'), C: this.input.keyboard.addKey('C')
     };
-    this.input.on('pointerdown', () => { if (!audioCtx) initAudio(); startBGM(); });
+    this.input.on('pointerdown', (pointer) => {
+        if (!audioCtx) initAudio(); startBGM();
+        // Left-click triggers attack (unless dead/upgrading)
+        if (pointer.leftButtonDown() && !playerDead && !upgradeActive && !transitioning) {
+            const body = player.body;
+            const onGround = body.blocked.down || body.touching.down;
+            const mL = keys.A.isDown || cursors.left.isDown;
+            const mR = keys.D.isDown || cursors.right.isDown;
+            triggerAttack(mL || mR, onGround);
+        }
+    });
 
     // --- HUD ---
     createHUD(this);
@@ -853,6 +888,27 @@ class Enemy {
     }
 
     updateAI(delta) {}
+
+    // Check if this enemy is allowed to actively attack/chase
+    isActiveAttacker() {
+        if (activeAttackers.includes(this)) return true;
+        if (activeAttackers.length < MAX_ACTIVE_ATTACKERS) {
+            activeAttackers.push(this);
+            return true;
+        }
+        return false;
+    }
+
+    // Release slot when no longer chasing/attacking
+    releaseAttackSlot() {
+        const idx = activeAttackers.indexOf(this);
+        if (idx !== -1) activeAttackers.splice(idx, 1);
+    }
+}
+
+// Clean dead enemies from active attacker list each frame
+function updatePartySystem() {
+    activeAttackers = activeAttackers.filter(e => !e.dead);
 }
 
 // ============================================================
@@ -876,11 +932,11 @@ class EnemyOni extends Enemy {
         if (this.state === 'attack') {
             this.attackTimer -= delta; this.playAnim('attack');
             if (this.attackTimer < this.config.attackDur*0.3) { s.setTint(0xff6644); if (this.attackTimer < this.config.attackDur*0.25 && this.attackTimer > this.config.attackDur*0.15) this.checkHitPlayer(); }
-            if (this.attackTimer <= 0) { this.state='idle'; this.attackCd=this.config.attackCooldown; s.clearTint(); }
+            if (this.attackTimer <= 0) { this.state='idle'; this.attackCd=this.config.attackCooldown; s.clearTint(); this.releaseAttackSlot(); }
             s.body.setVelocityX(0);
-        } else if (dist < this.config.attackRange && this.attackCd <= 0) { this.state='attack'; this.attackTimer=this.config.attackDur; s.body.setVelocityX(0); }
-        else if (dist < this.config.chaseRange) { this.state='chase'; this.playAnim('walk'); s.body.setVelocityX((dx>0?1:-1)*this.config.speed); }
-        else { this.state='idle'; this.playAnim('idle'); s.body.setVelocityX(0); }
+        } else if (dist < this.config.attackRange && this.attackCd <= 0 && this.isActiveAttacker()) { this.state='attack'; this.attackTimer=this.config.attackDur; s.body.setVelocityX(0); }
+        else if (dist < this.config.chaseRange && this.isActiveAttacker()) { this.state='chase'; this.playAnim('walk'); s.body.setVelocityX((dx>0?1:-1)*this.config.speed); }
+        else { this.state='idle'; this.playAnim('idle'); s.body.setVelocityX(0); this.releaseAttackSlot(); }
     }
 }
 
@@ -903,11 +959,11 @@ class EnemyArcher extends Enemy {
     updateAI(delta) {
         const s = this.sprite, dx = player.x - s.x, dist = Math.sqrt(dx*dx + (player.y-s.y)**2);
         if (dist < this.config.fleeRange) { this.state='flee'; this.playAnim('flee'); s.body.setVelocityX((dx>0?-1:1)*this.config.speed*1.3); }
-        else if (dist < this.config.attackRange && this.attackCd <= 0) {
+        else if (dist < this.config.attackRange && this.attackCd <= 0 && this.isActiveAttacker()) {
             this.state='shoot'; this.playAnim('shoot'); s.body.setVelocityX(0); this.attackCd=this.config.attackCooldown;
-            gameScene.time.delayedCall(300, () => { if (!this.dead) this.fireArrow(); });
-        } else if (dist < this.config.chaseRange && dist > this.config.attackRange*0.8) { this.state='chase'; this.playAnim('walk'); s.body.setVelocityX((dx>0?1:-1)*this.config.speed*0.7); }
-        else { this.state='idle'; this.playAnim('idle'); s.body.setVelocityX(0); }
+            gameScene.time.delayedCall(300, () => { if (!this.dead) { this.fireArrow(); this.releaseAttackSlot(); } });
+        } else if (dist < this.config.chaseRange && dist > this.config.attackRange*0.8 && this.isActiveAttacker()) { this.state='chase'; this.playAnim('walk'); s.body.setVelocityX((dx>0?1:-1)*this.config.speed*0.7); }
+        else { this.state='idle'; this.playAnim('idle'); s.body.setVelocityX(0); this.releaseAttackSlot(); }
     }
     fireArrow() {
         playArrowSound(); const dir = this.facingRight?1:-1;
@@ -953,11 +1009,11 @@ class EnemyShield extends Enemy {
         if (this.state === 'attack') {
             this.attackTimer -= delta; this.playAnim('block');
             if (this.attackTimer < this.config.attackDur*0.3) { s.setTint(0xff6644); if (this.attackTimer < this.config.attackDur*0.25 && this.attackTimer > this.config.attackDur*0.15) this.checkHitPlayer(); }
-            if (this.attackTimer <= 0) { this.state='idle'; this.attackCd=this.config.attackCooldown; s.clearTint(); }
+            if (this.attackTimer <= 0) { this.state='idle'; this.attackCd=this.config.attackCooldown; s.clearTint(); this.releaseAttackSlot(); }
             s.body.setVelocityX(0);
-        } else if (dist < this.config.attackRange && this.attackCd <= 0) { this.state='attack'; this.attackTimer=this.config.attackDur; s.body.setVelocityX(0); }
-        else if (dist < this.config.chaseRange) { this.state='chase'; this.playAnim('walk'); s.body.setVelocityX((dx>0?1:-1)*this.config.speed); }
-        else { this.state='idle'; this.playAnim('idle'); s.body.setVelocityX(0); }
+        } else if (dist < this.config.attackRange && this.attackCd <= 0 && this.isActiveAttacker()) { this.state='attack'; this.attackTimer=this.config.attackDur; s.body.setVelocityX(0); }
+        else if (dist < this.config.chaseRange && this.isActiveAttacker()) { this.state='chase'; this.playAnim('walk'); s.body.setVelocityX((dx>0?1:-1)*this.config.speed); }
+        else { this.state='idle'; this.playAnim('idle'); s.body.setVelocityX(0); this.releaseAttackSlot(); }
     }
 }
 
@@ -988,11 +1044,11 @@ class EnemyAssassin extends Enemy {
         if (this.state === 'attack') {
             this.attackTimer -= delta; this.playAnim('attack');
             if (this.attackTimer < this.config.attackDur*0.35) { s.setTint(0x44ddcc); if (this.attackTimer < this.config.attackDur*0.3 && this.attackTimer > this.config.attackDur*0.15) this.checkHitPlayer(); }
-            if (this.attackTimer <= 0) { this.state='idle'; this.attackCd=this.config.attackCooldown; s.clearTint(); }
+            if (this.attackTimer <= 0) { this.state='idle'; this.attackCd=this.config.attackCooldown; s.clearTint(); this.releaseAttackSlot(); }
             s.body.setVelocityX(0);
-        } else if (dist < this.config.attackRange && this.attackCd <= 0 && !this.isInvisible) { this.state='attack'; this.attackTimer=this.config.attackDur; s.body.setVelocityX(0); }
-        else if (dist < this.config.chaseRange) { this.state='chase'; this.playAnim(this.isInvisible?'vanish':'run'); s.body.setVelocityX((dx>0?1:-1)*this.config.speed); }
-        else { this.state='idle'; this.playAnim(this.isInvisible?'vanish':'idle'); s.body.setVelocityX(0); }
+        } else if (dist < this.config.attackRange && this.attackCd <= 0 && !this.isInvisible && this.isActiveAttacker()) { this.state='attack'; this.attackTimer=this.config.attackDur; s.body.setVelocityX(0); }
+        else if (dist < this.config.chaseRange && this.isActiveAttacker()) { this.state='chase'; this.playAnim(this.isInvisible?'vanish':'run'); s.body.setVelocityX((dx>0?1:-1)*this.config.speed); }
+        else { this.state='idle'; this.playAnim(this.isInvisible?'vanish':'idle'); s.body.setVelocityX(0); this.releaseAttackSlot(); }
     }
 }
 
@@ -1202,20 +1258,38 @@ const ANIMS = {
 };
 
 function playAnim(name) {
-    if (!player || player.currentAnim === name) return;
+    if (!player || playerDeadFrozen) return; // Block ALL anim changes once dead-frozen
+    if (player.currentAnim === name) return;
     player.currentAnim = name; player.animFrame = 0; player.animTimer = 0;
+    // Wall slide uses separate loaded image
+    if (name === 'wallslide') {
+        player.setTexture('hero_wallslide');
+        return;
+    }
     player.setTexture('sam_f' + ANIMS[name].frames[0]);
 }
 
 function updateAnimation(delta) {
-    if (!player) return;
+    if (!player || playerDeadFrozen) return; // Frozen = no more updates
     const anim = ANIMS[player.currentAnim];
     if (!anim || anim.frames.length <= 1) return;
     player.animTimer += delta;
     if (player.animTimer >= 1000 / anim.fps) {
         player.animTimer -= 1000 / anim.fps; player.animFrame++;
-        if (player.animFrame >= anim.frames.length) player.animFrame = anim.loop ? 0 : anim.frames.length - 1;
-        player.setTexture('sam_f' + anim.frames[player.animFrame]);
+        if (player.animFrame >= anim.frames.length) {
+            if (anim.loop) { player.animFrame = 0; }
+            else {
+                player.animFrame = anim.frames.length - 1;
+                // If death animation finished, freeze permanently
+                if (player.currentAnim === 'death') {
+                    playerDeadFrozen = true;
+                    return;
+                }
+            }
+        }
+        if (player.currentAnim !== 'wallslide') {
+            player.setTexture('sam_f' + anim.frames[player.animFrame]);
+        }
     }
 }
 
@@ -1235,7 +1309,11 @@ function playerDeath() {
     const overlay = gameScene.add.rectangle(W/2, H/2, W * 2, H * 2, 0x000000, 0).setDepth(199).setScrollFactor(0);
     gameScene.tweens.add({ targets: overlay, alpha: 0.6, duration: 1500 });
     deathUI.push(overlay);
-    gameScene.tweens.add({ targets: player, alpha: 0.3, scaleY: player.scaleY * 0.3, duration: 800, ease: 'Power2' });
+    // Collapse: tilt the character sideways to show fallen ronin
+    player.body.setVelocityX(0);
+    player.body.setVelocityY(0);
+    player.body.allowGravity = false;
+    gameScene.tweens.add({ targets: player, alpha: 0.5, rotation: facingRight ? 1.5 : -1.5, duration: 800, ease: 'Power2' });
 
     const z = 1.6;
     const dt = gameScene.add.text(W/z/2, H/z/2 - 5, 'YOU DIED', {
@@ -1255,9 +1333,11 @@ function playerDeath() {
 
     gameScene.time.delayedCall(1500, () => {
         const reviveHandler = () => {
-            playerDead = false; playerHP = playerMaxHP; playerHurtTimer = PLAYER_HURT_IFRAMES; updateHUD();
+            playerDead = false; playerDeadFrozen = false; playerHP = playerMaxHP; playerHurtTimer = PLAYER_HURT_IFRAMES; updateHUD();
             player.setAlpha(1).clearTint().setScale(CHAR_SCALE);
             player.setPosition(200, 550); player.body.setVelocity(0, 0);
+            player.setRotation(0);
+            player.body.allowGravity = true;
             deathUI.forEach(obj => { if (obj && obj.destroy) obj.destroy(); }); deathUI = [];
             gameScene.input.off('pointerdown', reviveHandler);
         };
@@ -1270,7 +1350,10 @@ function playerDeath() {
 // ============================================================
 function update(time, delta) {
     if (!player || !player.body) return;
-    if (playerDead) { updateAnimation(delta); return; }
+    if (playerDead) {
+        if (!playerDeadFrozen) updateAnimation(delta);
+        return;
+    }
     if (playerHP <= 0) return;
     if (transitioning || upgradeActive) return;
 
@@ -1297,6 +1380,7 @@ function update(time, delta) {
 
     if (hitstopTimer > 0) { hitstopTimer -= delta; return; }
 
+    updatePartySystem();
     enemies.forEach(e => e.update(delta));
     updateProjectiles(delta);
     updateParry(delta);
@@ -1341,6 +1425,7 @@ function update(time, delta) {
 
     if (onWall && !onGround) {
         wallDirection = onL ? -1 : 1;
+        // 50% gravity feel — cap vertical speed to WALL_SLIDE (slow descent)
         if (body.velocity.y > WALL_SLIDE) body.setVelocityY(WALL_SLIDE);
         jumpCount = 0;
         if (mL && !onL) { body.setVelocityX(-MOVE_SPEED); facingRight = false; }
