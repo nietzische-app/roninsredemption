@@ -517,25 +517,24 @@ const ROOMS = {
     },
     garden: {
         title: 'Yılan Bahçesi',
-        line: 'Bahçenin suyu zehir. Yılanlar zemini tutmuş. Çatıya çıkınca kuyruk yetişmez.',
-        bg: 'bg_castle', crop: CASTLE_CROP, tint: 0x6ea86a, layout: 'castle',
-        spawn: { x: 430, y: 590 },
-        portal: { x: 640, y: 470, w: 90, h: 50 },
+        line: 'Yılanlar zemini tutmuş. Peronlar alçak ve geniş. Kayarak kesmen yeter.',
+        bg: 'bg_castle', crop: CASTLE_CROP, tint: 0x6ea86a, layout: 'garden',
+        spawn: { x: 640, y: 590 },
+        portal: { x: 700, y: 590, w: 80, h: 55 },
         next: 'crypt',
-        foes: [['gorgon1', 430, 600], ['gorgon2', 860, 600], ['gorgon3', 220, 360], ['gorgon1', 1080, 350]],
+        foes: [['gorgon1', 220, 510], ['gorgon2', 980, 515], ['gorgon3', 480, 600], ['gorgon1', 860, 600]],
         reserves: ['gorgon2', 'gorgon3']
     },
     crypt: {
         title: 'Kemik Mahzeni',
-        line: 'Mezarlar boşalmış. Mızrak zeminde, ok galeride. Yukarı çıkmadan sağ kapı açılmaz.',
-        bg: 'bg_boss', tint: 0x99aacc, layout: 'hall',
-        spawn: { x: 210, y: 580 },
+        line: 'Tavan basık. Okçular alçak galeriden aşağı bakar. Aşağı in, C oku keser.',
+        bg: 'bg_boss', tint: 0x99aacc, layout: 'crypt',
+        spawn: { x: 480, y: 580 },
         portal: { x: 1160, y: 592, w: 70, h: 46 },
         next: 'ridge',
         foes: [
-            ['skelwar', 420, 590], ['skelspear', 760, 590],
-            ['skelarch', 237, 428], ['skelarch', 1046, 428],
-            ['skelwar', 416, 268], ['skelarch', 890, 268]
+            ['skelspear', 520, 590], ['skelwar', 780, 590],
+            ['skelarch', 260, 470], ['skelarch', 1040, 470]
         ],
         reserves: ['skelwar', 'skelspear', 'skelarch']
     },
@@ -582,9 +581,9 @@ const ROOMS = {
     },
     throne: {
         title: 'Taht',
-        line: 'Kontes salonun açık yerinde. Lanetin kalbi o. Yemin burada kapanır.',
-        bg: 'bg_boss', tint: 0xff8866, layout: 'hall',
-        spawn: { x: 240, y: 580 },
+        line: 'Kontes salonun ortasında. Kanı yarıya inince iki yanından biri girer.',
+        bg: 'bg_boss', tint: 0xff8866, layout: 'throne',
+        spawn: { x: 280, y: 580 },
         final: true,
         foes: [['countess', 680, 590]],
         reserves: ['vgirl', 'converted']
@@ -695,6 +694,7 @@ function clearRoom() {
         if (e.sprite && e.sprite.scene) e.sprite.destroy();
         if (e.hpGfx && e.hpGfx.scene) e.hpGfx.destroy();
         if (e.typeLabel && e.typeLabel.scene) e.typeLabel.destroy();
+        if (e._aimGfx && e._aimGfx.scene) e._aimGfx.destroy();
     });
     enemies = [];
     projectiles.forEach(p => { if (p.gfx && p.gfx.scene) p.gfx.destroy(); });
@@ -732,6 +732,25 @@ function layCastle(scene) {
     makeVisiblePlatform(scene, 1040, 250 + 4, 200, 8, 'wood');
 }
 
+function layGarden(scene) {
+    // Low, wide decks. A running slide crosses the open yard between them.
+    makeVisiblePlatform(scene, 640, 627 + 14, 1500, 28, 'ground');
+    makeVisiblePlatform(scene, 320, 548 + 4, 420, 8, 'wood');
+    makeVisiblePlatform(scene, 980, 552 + 4, 400, 8, 'wood');
+}
+
+function layCrypt(scene) {
+    // A squat vault. The galleries are one jump up, and nothing sits in the rafters.
+    makeVisiblePlatform(scene, 640, 616 + 16, 1500, 32, 'ground');
+    makeVisiblePlatform(scene, 260, 508 + 3, 200, 6, 'balcony');
+    makeVisiblePlatform(scene, 1040, 508 + 3, 200, 6, 'balcony');
+}
+
+function layThrone(scene) {
+    // The last room is the open floor. The countess is not perched on a balcony.
+    makeVisiblePlatform(scene, 640, 616 + 16, 1500, 32, 'ground');
+}
+
 function layHall(scene) {
     // Floorboards. Gallery decks and the lintel are one storey up; rafters sit on the high beams.
     makeVisiblePlatform(scene, 640, 616 + 16, 1500, 32, 'ground');
@@ -754,7 +773,10 @@ function buildRoom(scene, roomName) {
     const backdrop = addFittedBackdrop(scene, room.bg, room.crop || null);
     if (room.tint && backdrop) backdrop.setTint(room.tint);
     drawFog(scene);
-    if (room.layout === 'hall') layHall(scene);
+    if (room.layout === 'garden') layGarden(scene);
+    else if (room.layout === 'crypt') layCrypt(scene);
+    else if (room.layout === 'throne') layThrone(scene);
+    else if (room.layout === 'hall') layHall(scene);
     else layCastle(scene);
     makeInvisibleWall(scene, 8, 360, 16, 720);
     makeInvisibleWall(scene, 1272, 360, 16, 720);
@@ -799,13 +821,27 @@ function spawnFoe(scene, id, x, y) {
 }
 
 // Replacements walk in from the wings until the room's reserve is spent.
+function beginCountessPhase(bossEnemy) {
+    bossEnemy.config.speed = Math.round(bossEnemy.config.speed * 1.5);
+    bossEnemy.config.attackCooldown = 680;
+    if (bossNameText) bossNameText.setText('KONTES · KAN');
+    let n = 0;
+    while (reinforceQueue.length && n < 2) {
+        sendReinforcement();
+        n++;
+    }
+    if (!gameScene) return;
+    const fl = gameScene.add.rectangle(W / 2, H / 2, W, H, 0x660011, 0.35).setDepth(180).setScrollFactor(0);
+    gameScene.tweens.add({ targets: fl, alpha: 0, duration: 420, onComplete: () => fl.destroy() });
+}
+
 function sendReinforcement() {
     if (!reinforceQueue.length || !gameScene) return null;
     const id = reinforceQueue.shift();
     const fromLeft = (reinforceSide++ % 2) === 0;
     const room = ROOMS[currentRoom];
-    const hall = room && room.layout === 'hall';
-    const e = spawnFoe(gameScene, id, fromLeft ? 90 : 1190, hall ? 590 : 600);
+    const low = room && (room.layout === 'hall' || room.layout === 'crypt' || room.layout === 'throne');
+    const e = spawnFoe(gameScene, id, fromLeft ? 90 : 1190, low ? 590 : 600);
     e.entering = fromLeft ? 1 : -1;
     return e;
 }
@@ -1244,6 +1280,10 @@ class Enemy {
         // Combo counter
         totalComboHits++;
         comboDisplayTimer = 2000;
+        if (this.config.boss && !this._phase2 && this.hp > 0 && this.hp <= this.maxHp * 0.5) {
+            this._phase2 = true;
+            beginCountessPhase(this);
+        }
         if (this.hp <= 0) this.die();
     }
 
@@ -1431,6 +1471,7 @@ class SheetEnemy extends Enemy {
     }
 
     die() {
+        if (this._aimGfx) { this._aimGfx.destroy(); this._aimGfx = null; }
         const anim = this.config.anims.dead;
         if (anim) {
             this.animName = 'dead';
@@ -1503,6 +1544,7 @@ class SheetEnemy extends Enemy {
                 this.releaseAttackSlot();
             }
             if (this.shootTimer <= 0) this.state = 'idle';
+            this.drawAim();
             return;
         }
         if (dist < cfg.fleeRange) {
@@ -1524,14 +1566,35 @@ class SheetEnemy extends Enemy {
         } else {
             this.state = 'idle'; this.playAnim('idle'); s.body.setVelocityX(0);
         }
+        this.drawAim();
     }
 
-    fireBolt() {
+    handPoint() {
         const dir = this.facingRight ? 1 : -1;
         const scale = this.sprite.scaleY;
         const dims = this.config.dims;
-        const ax = this.sprite.x + dir * (this.config.handX - dims.fw * dims.originX) * scale;
-        const ay = this.sprite.y - (dims.fh - this.config.handY) * scale;
+        return {
+            x: this.sprite.x + dir * (this.config.handX - dims.fw * dims.originX) * scale,
+            y: this.sprite.y - (dims.fh - this.config.handY) * scale,
+            dir: dir
+        };
+    }
+
+    drawAim() {
+        if (this.dead) return;
+        if (!this._aimGfx) this._aimGfx = gameScene.add.graphics().setDepth(14);
+        this._aimGfx.clear();
+        if (!(this.shootTimer > 0 && !this._fired)) return;
+        const hand = this.handPoint();
+        const chestY = player.y - 40;
+        this._aimGfx.lineStyle(2, 0xffcc88, 0.55);
+        this._aimGfx.lineBetween(hand.x, hand.y, player.x, chestY);
+    }
+
+    fireBolt() {
+        const hand = this.handPoint();
+        const ax = hand.x;
+        const ay = hand.y;
         const chestY = player.y - 40;
         let dx = player.x - ax;
         let dy = chestY - ay;
@@ -1645,8 +1708,14 @@ function updateProjectiles(delta) {
         const p = projectiles[i];
         p.life -= delta; p.x += p.vx*(delta/1000); p.y += p.vy*(delta/1000);
         p.gfx.setPosition(p.x, p.y);
+        if (isParrying && parryWindow > 0 && Math.abs(p.x - player.x) < 48 && Math.abs(p.y - (player.y - 30)) < 46) {
+            p.gfx.destroy(); projectiles.splice(i, 1);
+            triggerParrySuccess(gameScene);
+            continue;
+        }
         if (!isDashing && playerHurtTimer <= 0 && playerHP > 0 && !playerDead) {
-            const bodyTop = player.y - PLAYER_HEIGHT * 0.85;
+            // A slide keeps the body low, so a chest-high arrow passes over it.
+            const bodyTop = player.y - (player._slide ? 26 : PLAYER_HEIGHT * 0.85);
             if (Math.abs(p.x - player.x) < 26 && p.y < player.y && p.y > bodyTop) {
                 playerHP -= p.dmg; playerHurtTimer = PLAYER_HURT_IFRAMES; player._hurtPose = 180; playHurtSound();
                 player.body.setVelocityX((p.vx>0?1:-1)*150); player.body.setVelocityY(-80);
