@@ -1,6 +1,6 @@
 // ============================================================
-//  RONIN'S REDEMPTION — v7
-//  8-bit cast on one grid. Phone buttons sit on the same actions as the keys.
+//  RONIN'S REDEMPTION — v8
+//  The player is the itch.io samurai. Feet are locked to one pixel on every sheet.
 // ============================================================
 
 const W = 1280, H = 720;
@@ -72,22 +72,31 @@ let killCountText = null;
 // ===================== SPRITE SHEET GRID =====================
 const PLAYER_HEIGHT = 140;
 const BIT_W = 64, BIT_H = 48, BIT_OX = 26, BIT_OY = 44, BIT_SCALE = 3;
-const RONIN_FW = BIT_W, RONIN_FH = BIT_H;
-const RONIN_OX = BIT_OX, RONIN_OY = BIT_OY;
-const RONIN_SCALE = BIT_SCALE;
 const BIT_DIMS = {
     fw: BIT_W, fh: BIT_H,
     originX: BIT_OX / BIT_W, originY: BIT_OY / BIT_H,
     bodyW: 12, bodyH: 18
 };
-// Frame order matches art/make_ronin.py. Attack slots are [windup, strike].
-const RONIN_FRAME = {
-    idle: 0, idle2: 1,
-    run: [2, 3, 4, 5, 6, 7],
-    jump: 8, fall: 9, wall: 10, dash: 11, parry: 12, death: 13,
-    jab: [14, 15], cross: [16, 17], hook: [18, 19],
-    upper: [20, 21], heavy: [22, 23],
-    runattack: 24, airattack: 25
+// Itch.io samurai, realigned so every frame's foot sits on (48, 80).
+const SAM_W = 96, SAM_H = 96, SAM_OX = 48, SAM_OY = 80, SAM_SCALE = 3;
+const RONIN_SCALE = SAM_SCALE;
+const SAMURAI = {
+    idle: { key: 'samurai_idle', frames: [1, 2, 3, 2] },
+    hurt: { key: 'samurai_idle', frames: [0] },
+    run:  { key: 'samurai_walk', frames: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9] },
+    jump: { key: 'samurai_dash', frames: [3] },
+    fall: { key: 'samurai_dash', frames: [11] },
+    wall: { key: 'samurai_idle', frames: [3] },
+    dash: { key: 'samurai_dash', frames: [0, 2, 4, 6, 8, 10, 12, 14] },
+    parry:{ key: 'samurai_atk', frames: [0] },
+    death:{ key: 'samurai_idle', frames: [0] },
+    jab:  { key: 'samurai_atk', frames: [0, 1, 2, 3, 4, 5, 6] },
+    cross:{ key: 'samurai_atk', frames: [0, 1, 2, 3, 4, 5, 6] },
+    hook: { key: 'samurai_atk', frames: [0, 1, 2, 3, 4, 5, 6] },
+    upper:{ key: 'samurai_atk', frames: [1, 2, 3, 4, 5, 6] },
+    heavy:{ key: 'samurai_atk', frames: [0, 1, 2, 3, 4, 5, 6] },
+    runattack: { key: 'samurai_atk', frames: [2, 3, 4, 5, 6] },
+    airattack: { key: 'samurai_atk', frames: [2, 3, 4, 5, 6] }
 };
 let playerShadow = null;
 const ENEMY_HEIGHT = BIT_H * BIT_SCALE;
@@ -459,11 +468,15 @@ function preload() {
     this.load.image('bg_castle', 'background.jpg');
     this.load.image('bg_boss', 'background_boss.png');
     const frame = { frameWidth: BIT_W, frameHeight: BIT_H };
-    this.load.spritesheet('ronin', 'ronin_sheet.png?v=44', frame);
-    this.load.spritesheet('oni', 'oni_sheet.png?v=44', frame);
-    this.load.spritesheet('archer', 'archer_sheet.png?v=44', frame);
-    this.load.spritesheet('shield', 'shield_sheet.png?v=44', frame);
-    this.load.spritesheet('assassin', 'assassin_sheet.png?v=44', frame);
+    const sam = { frameWidth: SAM_W, frameHeight: SAM_H };
+    this.load.spritesheet('samurai_idle', 'samurai_idle.png?v=45', sam);
+    this.load.spritesheet('samurai_walk', 'samurai_walk.png?v=45', sam);
+    this.load.spritesheet('samurai_atk', 'samurai_atk.png?v=45', sam);
+    this.load.spritesheet('samurai_dash', 'samurai_dash.png?v=45', sam);
+    this.load.spritesheet('oni', 'oni_sheet.png?v=45', frame);
+    this.load.spritesheet('archer', 'archer_sheet.png?v=45', frame);
+    this.load.spritesheet('shield', 'shield_sheet.png?v=45', frame);
+    this.load.spritesheet('assassin', 'assassin_sheet.png?v=45', frame);
 }
 
 // ============================================================
@@ -480,12 +493,13 @@ function create() {
 
     // Feet sit on the texture origin, so flips and landings stay put.
     // Body is centered on that origin, so facing left does not shift the hitbox.
-    player = this.physics.add.sprite(190, 600, 'ronin', 0);
+    player = this.physics.add.sprite(190, 600, 'samurai_idle', 1);
     playerHurtTimer = 1400;
-    player.setScale(RONIN_SCALE).setBounce(0).setCollideWorldBounds(true).setDepth(10);
-    player.setOrigin(RONIN_OX / RONIN_FW, RONIN_OY / RONIN_FH);
-    player.body.setSize(10, 18);
-    player.body.setOffset(RONIN_OX - 5, RONIN_OY - 18);
+    player._hurtPose = 0;
+    player.setScale(SAM_SCALE).setBounce(0).setCollideWorldBounds(true).setDepth(10);
+    player.setOrigin(SAM_OX / SAM_W, SAM_OY / SAM_H);
+    player.body.setSize(10, 22);
+    player.body.setOffset(SAM_OX - 5, SAM_OY - 22);
     player.body.setMaxVelocityY(980);
     player.currentAnim = 'idle';
     player._atkDur = 180;
@@ -1093,7 +1107,7 @@ class Enemy {
                 this.hurtTimer = 300; this.sprite.body.setVelocityX((this.facingRight ? -1 : 1) * 300);
                 return;
             }
-            playerHP -= this.config.attackDmg; playerHurtTimer = PLAYER_HURT_IFRAMES;
+            playerHP -= this.config.attackDmg; playerHurtTimer = PLAYER_HURT_IFRAMES; player._hurtPose = 180;
             playHurtSound();
             player.body.setVelocityX((this.facingRight ? -1 : 1) * this.config.knockback);
             player.body.setVelocityY(-150); player.setTint(0xff4444);
@@ -1442,7 +1456,7 @@ class BossOni extends Enemy {
             gameScene.tweens.add({ targets: wave, scaleX: 3, scaleY: 1.5, alpha: 0, duration: 500, onComplete: () => wave.destroy() });
             if (!isDashing && playerHurtTimer <= 0 && playerHP > 0 && !playerDead) {
                 if (Math.abs(player.x - sx) < 180 && Math.abs(player.y - sy) < 100) {
-                    playerHP -= 25; playerHurtTimer = PLAYER_HURT_IFRAMES; playHurtSound();
+                    playerHP -= 25; playerHurtTimer = PLAYER_HURT_IFRAMES; player._hurtPose = 180; playHurtSound();
                     player.body.setVelocityY(-350); player.body.setVelocityX((player.x > sx ? 1 : -1) * 400);
                     player.setTint(0xff4444); gameScene.cameras.main.shake(100, 0.01);
                     updateHUD(); if (playerHP <= 0) playerDeath();
@@ -1472,7 +1486,7 @@ function updateProjectiles(delta) {
         if (!isDashing && playerHurtTimer <= 0 && playerHP > 0 && !playerDead) {
             const bodyTop = player.y - PLAYER_HEIGHT * 0.85;
             if (Math.abs(p.x - player.x) < 26 && p.y < player.y && p.y > bodyTop) {
-                playerHP -= p.dmg; playerHurtTimer = PLAYER_HURT_IFRAMES; playHurtSound();
+                playerHP -= p.dmg; playerHurtTimer = PLAYER_HURT_IFRAMES; player._hurtPose = 180; playHurtSound();
                 player.body.setVelocityX((p.vx>0?1:-1)*150); player.body.setVelocityY(-80);
                 player.setTint(0xff4444); gameScene.cameras.main.shake(60,0.003);
                 updateHUD(); if (playerHP<=0) playerDeath();
@@ -1532,30 +1546,46 @@ function playAnim(name) {
     player.currentAnim = name;
 }
 
+function showSamurai(key, frame) {
+    const id = key + '#' + frame;
+    if (player._roninFrame === id) return;
+    const switched = player.texture.key !== key;
+    if (switched) player.setTexture(key, frame);
+    else player.setFrame(frame);
+    player.setOrigin(SAM_OX / SAM_W, SAM_OY / SAM_H);
+    player.setScale(SAM_SCALE);
+    if (switched && player.body) {
+        player.body.setSize(10, 22);
+        player.body.setOffset(SAM_OX - 5, SAM_OY - 22);
+    }
+    player._roninFrame = id;
+}
+
 function selectRoninFrame() {
     if (!player) return;
+    if (player._hurtPose > 0 && !playerDead) {
+        showSamurai(SAMURAI.hurt.key, SAMURAI.hurt.frames[0]);
+        player.clearTint();
+        return;
+    }
     const anim = player.currentAnim || 'idle';
-    let frame = RONIN_FRAME.idle;
+    const slot = SAMURAI[anim] || SAMURAI.idle;
+    let frame = slot.frames[0];
     if (anim === 'idle') {
-        frame = (Math.floor(performance.now() / 460) % 2) ? RONIN_FRAME.idle2 : RONIN_FRAME.idle;
+        frame = slot.frames[Math.floor(performance.now() / 360) % slot.frames.length];
     } else if (anim === 'run') {
         const cycle = Math.PI * 2;
         const phase = ((player._runPhase % cycle) + cycle) % cycle;
-        frame = RONIN_FRAME.run[Math.floor((phase / cycle) * 6) % 6];
-    } else if (Object.prototype.hasOwnProperty.call(RONIN_FRAME, anim)) {
-        const slot = RONIN_FRAME[anim];
-        if (Array.isArray(slot)) {
-            const dur = player._atkDur || 1;
-            const p = isAttacking ? (1 - attackTimer / dur) : 1;
-            frame = (p >= 0.16 && p < 0.78) ? slot[1] : slot[0];
-        } else {
-            frame = slot;
-        }
+        frame = slot.frames[Math.floor((phase / cycle) * slot.frames.length) % slot.frames.length];
+    } else if (anim === 'dash') {
+        const t = 1 - Math.max(0, dashTime) / DASH_DURATION;
+        frame = slot.frames[Math.min(slot.frames.length - 1, Math.floor(Math.max(0, t) * slot.frames.length))];
+    } else if (slot.frames.length > 1) {
+        const dur = player._atkDur || 1;
+        const p = isAttacking ? Math.min(1, Math.max(0, 1 - attackTimer / dur)) : 1;
+        frame = slot.frames[Math.min(slot.frames.length - 1, Math.floor(p * slot.frames.length))];
     }
-    if (player._roninFrame !== frame) {
-        player.setFrame(frame);
-        player._roninFrame = frame;
-    }
+    showSamurai(slot.key, frame);
 }
 
 // ============================================================
@@ -1628,6 +1658,7 @@ function update(time, delta) {
 
     if (playerHurtTimer > 0) {
         playerHurtTimer -= delta;
+        if (player._hurtPose > 0) player._hurtPose -= delta;
         player.setAlpha(playerHurtTimer % 80 > 40 ? 0.4 : 0.9);
         if (playerHurtTimer <= 0) player.setAlpha(1).clearTint();
     }
@@ -1879,11 +1910,11 @@ function spawnDashGhost(scene) {
     const sc = player.scaleX;
     const frame = player.frame.name;
     const place = (tint, depth, alpha, grow, dur) => {
-        const g = scene.add.sprite(player.x, player.y, 'ronin', frame)
+        const g = scene.add.sprite(player.x, player.y, player.texture.key, frame)
             .setOrigin(player.originX, player.originY)
             .setScale(sc).setFlipX(player.flipX).setDepth(depth).setTint(tint).setAlpha(alpha);
         scene.tweens.add({
-            targets: g, alpha: 0, scaleX: sc * grow, scaleY: sc * grow, duration: dur, ease: 'Power2',
+            targets: g, alpha: 0, duration: dur, ease: 'Power2',
             onComplete: () => g.destroy()
         });
     };
