@@ -469,6 +469,7 @@ function createTouchControls(scene) {
 //  THE BROKEN OATH — one cast, seven gates
 //  Frames are 128px. The foot sits on the last pixel row.
 // ============================================================
+const FOE_HEIGHT = 188; // a touch taller than the samurai, not a tower
 const CAST = {
     fighter:    { label: 'YUMRUKÇU', color: '#e07040', ox: 62, head: 46, hp: 100, speed: 150, range: 64,  dmg: 14, kind: 'melee',  frames: { idle: 6, walk: 8,  attack: 4,  dead: 3 } },
     shinobi:    { label: 'SHINOBI',  color: '#88aacc', ox: 66, head: 49, hp: 75,  speed: 210, range: 62,  dmg: 16, kind: 'melee',  frames: { idle: 6, walk: 8,  attack: 5,  dead: 4 } },
@@ -477,19 +478,19 @@ const CAST = {
     gorgon1:    { label: 'YILAN',    color: '#66cc66', ox: 50, head: 48, hp: 140, speed: 110, range: 96,  dmg: 16, kind: 'melee',  frames: { idle: 7, walk: 13, attack: 7, dead: 3 } },
     gorgon2:    { label: 'YILAN',    color: '#88dd66', ox: 62, head: 48, hp: 140, speed: 110, range: 96,  dmg: 16, kind: 'melee',  frames: { idle: 7, walk: 13, attack: 7, dead: 3 } },
     gorgon3:    { label: 'YILAN',    color: '#44aa66', ox: 54, head: 48, hp: 150, speed: 100, range: 96,  dmg: 18, kind: 'melee',  frames: { idle: 7, walk: 13, attack: 7, dead: 3 } },
-    skelwar:    { label: 'KEMİK',    color: '#ddddcc', ox: 55, head: 68, hp: 90,  speed: 120, range: 66,  dmg: 14, kind: 'melee',  frames: { idle: 7, walk: 7,  attack: 5,  dead: 4 } },
+    skelwar:    { label: 'KEMİK',    color: '#ddddcc', ox: 55, head: 68, hp: 90,  speed: 120, range: 66,  dmg: 14, kind: 'melee',  tall: 274, frames: { idle: 7, walk: 7,  attack: 5,  dead: 4 } },
     skelspear:  { label: 'MIZRAK',   color: '#ccccbb', ox: 58, head: 44, hp: 110, speed: 130, range: 84,  dmg: 16, kind: 'melee',  frames: { idle: 7, walk: 7,  attack: 4,  dead: 5 } },
-    skelarch:   { label: 'KEMİK OK', color: '#bbbb99', ox: 62, head: 50, hp: 70,  speed: 110, range: 300, dmg: 10, kind: 'archer', proj: 'skelarch_arrow', handX: 100, handY: 86, frames: { idle: 7, walk: 8, attack: 15, dead: 5 } },
-    satyr1:     { label: 'SATİR',    color: '#c4884a', ox: 61, head: 52, hp: 120, speed: 160, range: 66,  dmg: 15, kind: 'melee',  frames: { idle: 7, walk: 12, attack: 4, dead: 4 } },
+    skelarch:   { label: 'KEMİK OK', color: '#bbbb99', ox: 62, head: 50, hp: 70,  speed: 110, range: 300, dmg: 10, kind: 'archer', tall: 248, proj: 'skelarch_arrow', handX: 100, handY: 86, frames: { idle: 7, walk: 8, attack: 15, dead: 5 } },
+    satyr1:     { label: 'SATİR',    color: '#c4884a', ox: 61, head: 52, hp: 120, speed: 160, range: 66,  dmg: 15, kind: 'melee',  tall: 214, frames: { idle: 7, walk: 12, attack: 4, dead: 4 } },
     satyr2:     { label: 'SATİR',    color: '#d49858', ox: 61, head: 38, hp: 130, speed: 150, range: 70,  dmg: 16, kind: 'melee',  frames: { idle: 7, walk: 12, attack: 8, dead: 4 } },
-    satyr3:     { label: 'SATİR',    color: '#b07040', ox: 64, head: 50, hp: 110, speed: 170, range: 66,  dmg: 14, kind: 'melee',  frames: { idle: 6, walk: 12, attack: 9, dead: 4 } },
-    fire:       { label: 'ATEŞ',     color: '#ff6633', ox: 51, head: 58, hp: 80,  speed: 100, range: 270, dmg: 12, kind: 'mage', bolt: 'fire', handX: 92, handY: 88, frames: { idle: 7, walk: 6, attack: 4, dead: 6 } },
-    light:      { label: 'ŞİMŞEK',   color: '#88ccff', ox: 55, head: 60, hp: 80,  speed: 110, range: 290, dmg: 12, kind: 'mage', bolt: 'lightning', handX: 92, handY: 90, frames: { idle: 7, walk: 7, attack: 10, dead: 5 } },
-    wanderer:   { label: 'GEZGİN',   color: '#ccaaee', ox: 63, head: 58, hp: 100, speed: 125, range: 72,  dmg: 16, kind: 'melee',  frames: { idle: 8, walk: 7,  attack: 7,  dead: 4 } },
-    kunoichi:   { label: 'KUNOICHI', color: '#cc6688', ox: 62, head: 60, hp: 80,  speed: 200, range: 62,  dmg: 15, kind: 'melee',  frames: { idle: 9, walk: 8,  attack: 6,  dead: 5 } },
-    vgirl:      { label: 'VAMPİR',   color: '#cc4466', ox: 65, head: 54, hp: 100, speed: 160, range: 64,  dmg: 16, kind: 'melee',  frames: { idle: 5, walk: 6,  attack: 5,  dead: 10 } },
-    converted:  { label: 'DÖNMÜŞ',   color: '#aa6688', ox: 64, head: 48, hp: 150, speed: 130, range: 68,  dmg: 18, kind: 'melee',  frames: { idle: 5, walk: 8,  attack: 5,  dead: 8 } },
-    countess:   { label: 'KONTES',   color: '#ff4466', ox: 64, head: 52, hp: 560, speed: 100, range: 78,  dmg: 22, kind: 'melee', boss: true, tall: 192, frames: { idle: 5, walk: 6, attack: 6, dead: 8 } }
+    satyr3:     { label: 'SATİR',    color: '#b07040', ox: 64, head: 50, hp: 110, speed: 170, range: 66,  dmg: 14, kind: 'melee',  tall: 211, frames: { idle: 6, walk: 12, attack: 9, dead: 4 } },
+    fire:       { label: 'ATEŞ',     color: '#ff6633', ox: 51, head: 58, hp: 80,  speed: 100, range: 270, dmg: 12, kind: 'mage', tall: 240, bolt: 'fire', handX: 92, handY: 88, frames: { idle: 7, walk: 6, attack: 4, dead: 6 } },
+    light:      { label: 'ŞİMŞEK',   color: '#88ccff', ox: 55, head: 60, hp: 80,  speed: 110, range: 290, dmg: 12, kind: 'mage', tall: 252, bolt: 'lightning', handX: 92, handY: 90, frames: { idle: 7, walk: 7, attack: 10, dead: 5 } },
+    wanderer:   { label: 'GEZGİN',   color: '#ccaaee', ox: 63, head: 58, hp: 100, speed: 125, range: 72,  dmg: 16, kind: 'melee',  tall: 240, frames: { idle: 8, walk: 7,  attack: 7,  dead: 4 } },
+    kunoichi:   { label: 'KUNOICHI', color: '#cc6688', ox: 62, head: 60, hp: 80,  speed: 200, range: 62,  dmg: 15, kind: 'melee',  tall: 248, frames: { idle: 9, walk: 8,  attack: 6,  dead: 5 } },
+    vgirl:      { label: 'VAMPİR',   color: '#cc4466', ox: 65, head: 54, hp: 100, speed: 160, range: 64,  dmg: 16, kind: 'melee',  tall: 226, frames: { idle: 5, walk: 6,  attack: 5,  dead: 10 } },
+    converted:  { label: 'DÖNMÜŞ',   color: '#aa6688', ox: 64, head: 48, hp: 150, speed: 130, range: 68,  dmg: 18, kind: 'melee',  tall: 208, frames: { idle: 5, walk: 8,  attack: 5,  dead: 8 } },
+    countess:   { label: 'KONTES',   color: '#ff4466', ox: 64, head: 52, hp: 560, speed: 100, range: 78,  dmg: 22, kind: 'melee', boss: true, tall: 250, frames: { idle: 5, walk: 6, attack: 6, dead: 8 } }
 };
 
 const CASTLE_CROP = { x: 0, y: 115, w: 1023, h: 793 };
@@ -1379,7 +1380,7 @@ class SheetEnemy extends Enemy {
         super(scene, x, y, {
             sheet: id + '_idle',
             label: def.label, labelColor: def.color,
-            hp: def.hp, pixelHeight: def.tall || 160,
+            hp: def.hp, pixelHeight: def.tall || FOE_HEIGHT,
             attackDmg: def.dmg, knockback: def.boss ? 340 : 220,
             speed: def.speed,
             chaseRange: def.kind === 'melee' ? 340 : 460,
