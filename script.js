@@ -93,7 +93,8 @@ const SAMURAI = {
     wall: { key: 'samurai_idle', frames: [3] },
     dash: { key: 'samurai_dash', frames: [0, 2, 4, 6, 8, 10, 12, 14] },
     parry:{ key: 'samurai_atk', frames: [0] },
-    death:{ key: 'samurai_idle', frames: [0] },
+    death:{ key: 'samurai_death', frames: [0, 1, 2, 3, 4, 5] },
+    slide:{ key: 'samurai_slide', frames: [0, 1, 2, 3, 4] },
     jab:  { key: 'samurai_atk', frames: [0, 1, 2, 3, 4, 5, 6] },
     cross:{ key: 'samurai_atk', frames: [0, 1, 2, 3, 4, 5, 6] },
     hook: { key: 'samurai_atk', frames: [0, 1, 2, 3, 4, 5, 6] },
@@ -127,6 +128,8 @@ const ATTACKS = [
     { name: 'HEAVY SLASH', pose: 'heavy', dur: 320, cd: 100, hb:{ox:58,oy:-50,w:96,h:50}, lunge: 260, trail:{sa:-35,ea:55,r:65,w:8}, shake: 0.008, dmg: 35 }
 ];
 const RUN_ATTACK = { name: 'DASH CUT', pose: 'runattack', dur: 220, cd: 70, hb:{ox:64,oy:-56,w:92,h:46}, lunge: 350, trail:{sa:-15,ea:25,r:60,w:7}, shake: 0.005, dmg: 28 };
+// Ground slide. Speed eases off so the cut skates along the floor.
+const SLIDE_ATTACK = { name: 'KAYMA', pose: 'slide', dur: 440, cd: 90, hb:{ox:50,oy:-22,w:86,h:36}, lunge: 660, trail:{sa:-6,ea:16,r:36,w:6}, shake: 0.004, dmg: 24 };
 const AIR_ATTACK = { name: 'AIR SLASH', pose: 'airattack', dur: 200, cd: 60, hb:{ox:52,oy:-48,w:78,h:50}, lunge: 100, trail:{sa:30,ea:-40,r:50,w:6}, shake: 0.004, dmg: 20 };
 
 // ============================================================
@@ -387,11 +390,13 @@ function restoreVisualOffsets() {
 }
 
 function applyVisualOffsets() {
-    if (player && !playerDead) {
-        // Pixel frames stay axis-aligned. Lean lives in the drawing, not in a rotated texture.
+    if (player) {
+        // The fall and the slide are drawn into the frames. The sprite stays upright.
         player.setRotation(0);
-        const dy = player._wantDy || 0;
-        if (dy) { player.y += dy; player._appliedDy = dy; }
+        if (!playerDead) {
+            const dy = player._wantDy || 0;
+            if (dy) { player.y += dy; player._appliedDy = dy; }
+        }
     }
     if (playerShadow && player) {
         const air = player.body && Math.abs(player.body.velocity.y) > 80;
@@ -598,6 +603,8 @@ function preload() {
     this.load.spritesheet('samurai_walk', 'samurai_walk.png?v=45', sam);
     this.load.spritesheet('samurai_atk', 'samurai_atk.png?v=45', sam);
     this.load.spritesheet('samurai_dash', 'samurai_dash.png?v=45', sam);
+    this.load.spritesheet('samurai_slide', 'samurai_slide.png?v=60', sam);
+    this.load.spritesheet('samurai_death', 'samurai_death.png?v=60', sam);
     Object.keys(CAST).forEach((id) => {
         const def = CAST[id];
         Object.keys(def.frames).forEach((anim) => {
@@ -1725,6 +1732,27 @@ function selectRoninFrame() {
         return;
     }
     const anim = player.currentAnim || 'idle';
+    if (anim === 'death' && player._deathT0) {
+        const slotD = SAMURAI.death;
+        const now = performance.now();
+        const onG = player.body && (player.body.blocked.down || player.body.touching.down);
+        let i;
+        if (!player._startedOnGround && !onG && (now - player._deathT0) < 1000) {
+            i = Math.min(3, Math.floor((now - player._deathT0) / 90));
+        } else {
+            if (!player._deathLand) player._deathLand = player._startedOnGround ? player._deathT0 : now;
+            const t = now - player._deathLand;
+            i = player._startedOnGround
+                ? Math.min(slotD.frames.length - 1, Math.floor(t / 120))
+                : Math.min(slotD.frames.length - 1, 3 + Math.floor(t / 130));
+            if (onG && player.body) {
+                player.body.setVelocity(0, 0);
+                player.body.allowGravity = false;
+            }
+        }
+        showSamurai(slotD.key, slotD.frames[i]);
+        return;
+    }
     const slot = SAMURAI[anim] || SAMURAI.idle;
     let frame = slot.frames[0];
     if (anim === 'idle') {
@@ -1751,41 +1779,44 @@ let deathUI = [];
 function playerDeath() {
     if (playerDead) return;
     playerDead = true; playerHP = 0; updateHUD();
-    playDeathSound(); playAnim('death');
+    playDeathSound();
+    player._deathT0 = performance.now();
+    player._deathLand = 0;
+    player._startedOnGround = !!(player.body.blocked.down || player.body.touching.down);
+    player._slide = false;
+    player.setAlpha(1).setRotation(0);
+    playAnim('death');
     playerDeadFrozen = true;
-    player.body.setVelocityX(0); player.body.setVelocityY(0);
+    player.body.setVelocityX(0);
+    if (player._startedOnGround) player.body.setVelocityY(0);
 
     const fl = gameScene.add.rectangle(W/2, H/2, W * 2, H * 2, 0xff0000, 0.4).setDepth(200).setScrollFactor(0);
     gameScene.tweens.add({ targets: fl, alpha: 0.1, duration: 1000 });
     deathUI.push(fl);
     const overlay = gameScene.add.rectangle(W/2, H/2, W * 2, H * 2, 0x000000, 0).setDepth(199).setScrollFactor(0);
-    gameScene.tweens.add({ targets: overlay, alpha: 0.6, duration: 1500 });
+    gameScene.tweens.add({ targets: overlay, alpha: 0.55, duration: 900, delay: 520 });
     deathUI.push(overlay);
-    // Collapse: tilt the character sideways to show fallen ronin
-    player.body.setVelocityX(0);
-    player.body.setVelocityY(0);
-    player.body.allowGravity = false;
-    gameScene.tweens.add({ targets: player, alpha: 0.55, duration: 800, ease: 'Power2' });
 
-    const dt = gameScene.add.text(W/2, H/2 - 5, 'YOU DIED', {
+    const dt = gameScene.add.text(W/2, H/2 - 5, 'DÜŞTÜN', {
         fontFamily: 'Georgia, "Times New Roman", serif', fontSize: '40px', color: '#8b0000', fontStyle: 'bold',
         stroke: '#2a0000', strokeThickness: 4,
         shadow: { offsetX: 3, offsetY: 3, color: '#000000', blur: 15, stroke: true, fill: true }
     }).setOrigin(0.5).setDepth(210).setScrollFactor(0).setAlpha(0).setScale(0.7);
-    gameScene.tweens.add({ targets: dt, alpha: 1, scaleX: 1.05, scaleY: 1.05, duration: 2500, ease: 'Sine.easeInOut',
+    gameScene.tweens.add({ targets: dt, alpha: 1, scaleX: 1.05, scaleY: 1.05, duration: 700, delay: 620, ease: 'Sine.easeInOut',
         onComplete: () => { gameScene.tweens.add({ targets: dt, alpha: 0.6, duration: 1800, yoyo: true, repeat: -1 }); }
     });
     deathUI.push(dt);
-    const rt = gameScene.add.text(W/2, H/2 + 50, 'Tekrar Denemek Icin Tiklayin', {
+    const rt = gameScene.add.text(W/2, H/2 + 50, 'Tekrar denemek için tıkla', {
         fontFamily: 'Georgia, serif', fontSize: '10px', color: '#666655', fontStyle: 'italic'
     }).setOrigin(0.5).setDepth(210).setScrollFactor(0).setAlpha(0);
-    gameScene.tweens.add({ targets: rt, alpha: 0.8, duration: 1000, delay: 2800 });
+    gameScene.tweens.add({ targets: rt, alpha: 0.8, duration: 700, delay: 1100 });
     deathUI.push(rt);
 
     gameScene.time.delayedCall(1500, () => {
         const reviveHandler = () => {
             playerDead = false; playerDeadFrozen = false; playerHP = playerMaxHP; playerHurtTimer = PLAYER_HURT_IFRAMES; updateHUD();
             player.setAlpha(1).clearTint().setScale(RONIN_SCALE).setRotation(0);
+            player._deathT0 = 0; player._deathLand = 0; player._slide = false;
             const back = (ROOMS[currentRoom] && ROOMS[currentRoom].spawn) || { x: 300, y: 600 };
             player.setPosition(back.x, back.y); player.body.setVelocity(0, 0); player.currentAnim = ''; playAnim('idle');
             playerHurtTimer = 1400;
@@ -1858,7 +1889,8 @@ function update(time, delta) {
 
     if (isAttacking) {
         attackTimer -= delta;
-        if (attackTimer <= 0) { isAttacking = false; clearSlash(); }
+        if (player._slide) tickSlide(delta);
+        if (attackTimer <= 0) { isAttacking = false; player._slide = false; clearSlash(); }
         else return;
     }
 
@@ -1967,14 +1999,19 @@ function triggerAttack(isMoving, onGround) {
     const dir = facingRight ? 1 : -1;
     let atk, animName;
 
+    player._slide = false;
     if (!onGround) {
         atk = AIR_ATTACK;
         animName = atk.pose;
         comboStep = 0; comboTimer = 0;
     } else if (isMoving) {
-        atk = RUN_ATTACK;
+        atk = SLIDE_ATTACK;
         animName = atk.pose;
         comboStep = 0; comboTimer = 0;
+        player._slide = true;
+        player._slideHits = [];
+        player._slideDust = 0;
+        player.body.setVelocityY(Math.max(0, player.body.velocity.y));
     } else {
         const step = comboStep % 5;
         atk = ATTACKS[step];
@@ -2000,14 +2037,18 @@ function triggerAttack(isMoving, onGround) {
     }
 
     let hitSomething = false;
-    enemies.forEach(e => {
-        if (e.dead || e.hurtTimer > 0) return;
-        const hitRange = e.config && e.config.boss ? atk.hb.w + 30 : atk.hb.w;
-        const hitH = e.config && e.config.boss ? atk.hb.h + 36 : atk.hb.h + 20;
-        if (Math.abs(e.sprite.x - hx) < hitRange && Math.abs(e.sprite.y - hy) < hitH) {
-            if (e.canTakeDamage(dir)) { e.takeDamage(atk.dmg, dir); hitSomething = true; }
-        }
-    });
+    if (player._slide) {
+        hitSomething = slideStrike();
+    } else {
+        enemies.forEach(e => {
+            if (e.dead || e.hurtTimer > 0) return;
+            const hitRange = e.config && e.config.boss ? atk.hb.w + 30 : atk.hb.w;
+            const hitH = e.config && e.config.boss ? atk.hb.h + 36 : atk.hb.h + 20;
+            if (Math.abs(e.sprite.x - hx) < hitRange && Math.abs(e.sprite.y - hy) < hitH) {
+                if (e.canTakeDamage(dir)) { e.takeDamage(atk.dmg, dir); hitSomething = true; }
+            }
+        });
+    }
 
     // Enhanced hitstop on contact (SF feel)
     hitstopTimer = hitSomething ? HITSTOP_MS : Math.floor(HITSTOP_MS * 0.3);
@@ -2045,6 +2086,40 @@ function drawBladeTrail(scene, x, y, atk, dir, step) {
 function spawnBladeParticles(scene, x, y, dir, step) {
     const count = step >= 3 ? 12 : 6;
     for (let i=0;i<count;i++) { const px=x+Phaser.Math.Between(-12,12),py=y+Phaser.Math.Between(-18,18); const c=Math.random()<0.4?0xffffff:(Math.random()<0.5?0xff3322:0xff6644); const s=Phaser.Math.Between(1,4); const p=scene.add.rectangle(px,py,s,s,c,0.8).setDepth(16); scene.tweens.add({targets:p,x:px+dir*Phaser.Math.Between(15,60),y:py+Phaser.Math.Between(-25,20),alpha:0,scaleX:0,scaleY:0,duration:Phaser.Math.Between(120,350),ease:'Power2',onComplete:()=>p.destroy()}); }
+}
+
+function tickSlide(delta) {
+    const dir = facingRight ? 1 : -1;
+    const u = Math.max(0, attackTimer / (player._atkDur || 1));
+    player.body.setVelocityX(dir * (210 + 450 * u));
+    if (player.body.velocity.y < 0) player.body.setVelocityY(0);
+    player._slideDust -= delta;
+    if (player._slideDust <= 0) {
+        spawnFootDust(gameScene, player.x, player.y);
+        player._slideDust = 45;
+    }
+    if (slideStrike()) {
+        hitstopTimer = HITSTOP_MS;
+        gameScene.cameras.main.shake(80, 0.004);
+    }
+}
+
+function slideStrike() {
+    const dir = facingRight ? 1 : -1;
+    const hx = player.x + dir * 46;
+    let hit = false;
+    if (!player._slideHits) player._slideHits = [];
+    enemies.forEach(e => {
+        if (e.dead || e.hurtTimer > 0 || player._slideHits.indexOf(e) !== -1) return;
+        if (Math.abs(e.sprite.x - hx) < 60 && Math.abs(e.sprite.y - player.y) < 46) {
+            if (e.canTakeDamage(dir)) {
+                e.takeDamage(SLIDE_ATTACK.dmg, dir);
+                player._slideHits.push(e);
+                hit = true;
+            }
+        }
+    });
+    return hit;
 }
 
 function clearSlash() { slashGfx.forEach(g => { if (g && g.scene) g.destroy() }); slashGfx = []; }
