@@ -1,39 +1,24 @@
 // ============================================================
-//  RONIN'S REDEMPTION — v3.0 Revolution
-//  SF/TMNT Arcade Combat + Platforming + Mystic Portal + Upgrades
-//  Samurai: 3x3 grid | Enemies: 4x4 grids
+//  RONIN'S REDEMPTION — v4
+//  Movement is locked to real poses. The castle keeps its aspect.
+//  Samurai sheet is 3x3 stills, enemies are 4x4 stills — not walk cycles.
 // ============================================================
 
 const W = 1280, H = 720;
 const config = {
     type: Phaser.AUTO, width: W, height: H,
-    backgroundColor: '#0a0808',
+    backgroundColor: '#07060a',
     physics: { default: 'arcade', arcade: { gravity: { y: 1400 }, debug: false } },
     scene: { preload, create, update },
     pixelArt: true,
     scale: {
-        mode: Phaser.Scale.NONE,
-        parent: document.body
+        mode: Phaser.Scale.FIT,
+        autoCenter: Phaser.Scale.CENTER_BOTH,
+        width: W,
+        height: H
     }
 };
 const game = new Phaser.Game(config);
-
-// Force canvas to fill entire viewport via JS (CSS selectors can miss Phaser's wrapper)
-function forceFullscreen() {
-    const c = game.canvas;
-    if (c) {
-        c.style.position = 'fixed';
-        c.style.top = '0';
-        c.style.left = '0';
-        c.style.width = '100vw';
-        c.style.height = '100vh';
-        c.style.margin = '0';
-        c.style.padding = '0';
-    }
-}
-window.addEventListener('resize', forceFullscreen);
-game.events.on('ready', forceFullscreen);
-setTimeout(forceFullscreen, 100);
 
 // ===================== STATE =====================
 let player, platforms, walls, cursors, keys, gameScene;
@@ -88,13 +73,16 @@ let killCountText = null;
 // ===================== SPRITE SHEET GRID =====================
 const PLAYER_COLS = 3, PLAYER_ROWS = 3;
 const ENEMY_COLS = 4, ENEMY_ROWS = 4;
-const CHAR_SCALE = 0.55;
+const PLAYER_HEIGHT = 124;
+const ENEMY_HEIGHT = 112;
+const BOSS_HEIGHT = 220;
+let playerDims = null;
 
 // ===================== TUNING =====================
 const maxJumps = 2;
 let MOVE_SPEED = 420;
 const GROUND_DECEL = 2800, AIR_DECEL = 600;
-let JUMP_FORCE = -620, DOUBLE_JUMP_FORCE = -540;
+let JUMP_FORCE = -660, DOUBLE_JUMP_FORCE = -560;
 const WALL_SLIDE = 90, WALL_JUMP_X = 380, WALL_JUMP_Y = -560;
 const DASH_SPEED = 900, DASH_DURATION = 150, DASH_COOLDOWN = 650;
 const COYOTE_TIME = 80, JUMP_BUFFER = 100;
@@ -102,15 +90,16 @@ let COMBO_WINDOW = 800, HITSTOP_MS = 65;
 const PARRY_ACTIVE = 200, PARRY_TOTAL = 400, PARRY_CD = 600;
 
 // ===================== SF/TMNT COMBO ATTACKS =====================
+// Hitboxes are measured from the feet. oy is upward.
 const ATTACKS = [
-    { name: 'JAB',        dur: 160, cd: 40,  hb:{ox:50,oy:-5,w:60,h:45}, lunge: 120, trail:{sa:-10,ea:20,r:45,w:4}, shake: 0.002, dmg: 12 },
-    { name: 'CROSS',      dur: 180, cd: 45,  hb:{ox:55,oy:-10,w:65,h:48}, lunge: 150, trail:{sa:15,ea:-25,r:50,w:5}, shake: 0.003, dmg: 15 },
-    { name: 'HOOK',        dur: 200, cd: 50,  hb:{ox:50,oy:-15,w:70,h:50}, lunge: 160, trail:{sa:-20,ea:35,r:52,w:5}, shake: 0.004, dmg: 18 },
-    { name: 'UPPERCUT',   dur: 250, cd: 60,  hb:{ox:45,oy:-30,w:55,h:65}, lunge: 80,  trail:{sa:50,ea:-60,r:55,w:6}, shake: 0.006, dmg: 22 },
-    { name: 'HEAVY SLASH', dur: 320, cd: 100, hb:{ox:60,oy:5,w:90,h:55},  lunge: 260, trail:{sa:-35,ea:55,r:65,w:8}, shake: 0.008, dmg: 35 }
+    { name: 'JAB',        pose: 'jab',   dur: 160, cd: 40,  hb:{ox:48,oy:-58,w:62,h:40}, lunge: 120, trail:{sa:-10,ea:20,r:45,w:4}, shake: 0.002, dmg: 12 },
+    { name: 'CROSS',      pose: 'cross', dur: 180, cd: 45,  hb:{ox:54,oy:-62,w:68,h:42}, lunge: 150, trail:{sa:15,ea:-25,r:50,w:5}, shake: 0.003, dmg: 15 },
+    { name: 'HOOK',        pose: 'hook',  dur: 200, cd: 50,  hb:{ox:50,oy:-66,w:72,h:44}, lunge: 160, trail:{sa:-20,ea:35,r:52,w:5}, shake: 0.004, dmg: 18 },
+    { name: 'UPPERCUT',   pose: 'upper', dur: 250, cd: 60,  hb:{ox:36,oy:-92,w:56,h:70}, lunge: 80,  trail:{sa:50,ea:-60,r:55,w:6}, shake: 0.006, dmg: 22 },
+    { name: 'HEAVY SLASH', pose: 'heavy', dur: 320, cd: 100, hb:{ox:58,oy:-50,w:96,h:50}, lunge: 260, trail:{sa:-35,ea:55,r:65,w:8}, shake: 0.008, dmg: 35 }
 ];
-const RUN_ATTACK = { name: 'DASH CUT', dur: 220, cd: 70, hb:{ox:70,oy:-5,w:90,h:50}, lunge: 350, trail:{sa:-15,ea:25,r:60,w:7}, shake: 0.005, dmg: 28 };
-const AIR_ATTACK = { name: 'AIR SLASH', dur: 200, cd: 60, hb:{ox:55,oy:10,w:75,h:55}, lunge: 100, trail:{sa:30,ea:-40,r:50,w:6}, shake: 0.004, dmg: 20 };
+const RUN_ATTACK = { name: 'DASH CUT', pose: 'runattack', dur: 220, cd: 70, hb:{ox:64,oy:-56,w:92,h:46}, lunge: 350, trail:{sa:-15,ea:25,r:60,w:7}, shake: 0.005, dmg: 28 };
+const AIR_ATTACK = { name: 'AIR SLASH', pose: 'airattack', dur: 200, cd: 60, hb:{ox:52,oy:-48,w:78,h:50}, lunge: 100, trail:{sa:30,ea:-40,r:50,w:6}, shake: 0.004, dmg: 20 };
 
 // ============================================================
 //  AUDIO
@@ -190,72 +179,209 @@ let bgmStarted = false;
 function startBGM() { if (bgmStarted || !bgmAudio) return; bgmStarted = true; bgmAudio.play().catch(() => { bgmStarted = false; }); }
 
 // ============================================================
-//  SPRITE SHEET — 3-Pass ChromaKey (Enhanced)
+//  SPRITE SHEET — gap slice, chroma key, shared foot anchor
+//  Equal grids were cutting heads off and sliding the body
+//  between frames, because these sheets are posed stills with
+//  uneven padding, not a tight walk cycle.
 // ============================================================
-function processAndSliceSheet(scene, rawKey, prefix, tolerance, cols, rows) {
-    const src = scene.textures.get(rawKey).getSourceImage();
-    const fw = Math.floor(src.width / cols);
-    const fh = Math.floor(src.height / rows);
-    for (let row = 0; row < rows; row++) {
-        for (let col = 0; col < cols; col++) {
-            const idx = row * cols + col;
-            const c = document.createElement('canvas');
-            c.width = fw; c.height = fh;
-            const ctx = c.getContext('2d');
-            ctx.drawImage(src, col * fw, row * fh, fw, fh, 0, 0, fw, fh);
-            const imgData = ctx.getImageData(0, 0, fw, fh);
-            const d = imgData.data;
-            // Pass 1: Remove pure white and near-white
-            for (let i = 0; i < d.length; i += 4) {
-                const r = d[i], g = d[i+1], b = d[i+2];
-                if (r > (255 - tolerance) && g > (255 - tolerance) && b > (255 - tolerance)) {
-                    d[i+3] = 0;
-                } else if (r > 210 && g > 210 && b > 210 && Math.abs(r - g) < 20 && Math.abs(g - b) < 20) {
-                    const brightness = (r + g + b) / 3;
-                    d[i+3] = Math.min(d[i+3], Math.max(0, Math.floor((255 - brightness) * 3.5)));
-                }
-            }
-            // Pass 2: Edge softening (4-neighbor check)
-            const d2 = new Uint8ClampedArray(d);
-            for (let y = 1; y < fh - 1; y++) {
-                for (let x = 1; x < fw - 1; x++) {
-                    const pi = (y * fw + x) * 4;
-                    if (d[pi + 3] === 0) continue;
-                    let tn = 0;
-                    if (d[((y-1)*fw+x)*4+3] === 0) tn++;
-                    if (d[((y+1)*fw+x)*4+3] === 0) tn++;
-                    if (d[(y*fw+x-1)*4+3] === 0) tn++;
-                    if (d[(y*fw+x+1)*4+3] === 0) tn++;
-                    if (tn > 0) {
-                        const br = (d[pi] + d[pi+1] + d[pi+2]) / 3;
-                        if (br > 180) d2[pi+3] = Math.floor(d[pi+3] * Math.max(0, 1 - tn * 0.3));
-                        else if (tn >= 2) d2[pi+3] = Math.floor(d[pi+3] * 0.65);
-                    }
-                }
-            }
-            // Pass 3: 8-neighbor diagonal cleanup
-            for (let y = 1; y < fh - 1; y++) {
-                for (let x = 1; x < fw - 1; x++) {
-                    const pi = (y * fw + x) * 4;
-                    if (d2[pi + 3] === 0) continue;
-                    let dn = 0;
-                    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
-                        if (dx === 0 && dy === 0) continue;
-                        if (d2[((y+dy)*fw+(x+dx))*4+3] === 0) dn++;
-                    }
-                    if (dn >= 5) d2[pi+3] = Math.floor(d2[pi+3] * 0.3);
-                    else if (dn >= 3) {
-                        const br = (d2[pi] + d2[pi+1] + d2[pi+2]) / 3;
-                        if (br > 160) d2[pi+3] = Math.floor(d2[pi+3] * 0.5);
-                    }
-                }
-            }
-            for (let i = 0; i < d.length; i++) d[i] = d2[i];
-            ctx.putImageData(imgData, 0, 0);
-            scene.textures.addCanvas(prefix + idx, c);
+function bandsFromHist(hist, thresh) {
+    const spans = [];
+    let start = -1;
+    for (let i = 0; i < hist.length; i++) {
+        if (hist[i] > thresh && start < 0) start = i;
+        else if (hist[i] <= thresh && start >= 0) {
+            spans.push([start, i - 1]);
+            start = -1;
         }
     }
-    return { fw, fh };
+    if (start >= 0) spans.push([start, hist.length - 1]);
+    const merged = [];
+    for (const s of spans) {
+        if (!merged.length || s[0] - merged[merged.length - 1][1] > 12) merged.push([s[0], s[1]]);
+        else merged[merged.length - 1][1] = s[1];
+    }
+    return merged.filter(s => s[1] - s[0] > 36);
+}
+
+function chromaKeyCanvas(ctx, tolerance) {
+    const w = ctx.canvas.width, h = ctx.canvas.height;
+    const imgData = ctx.getImageData(0, 0, w, h);
+    const d = imgData.data;
+    for (let i = 0; i < d.length; i += 4) {
+        const r = d[i], g = d[i + 1], b = d[i + 2];
+        if (r > (255 - tolerance) && g > (255 - tolerance) && b > (255 - tolerance)) d[i + 3] = 0;
+        else if (r > 205 && g > 205 && b > 205 && Math.abs(r - g) < 22 && Math.abs(g - b) < 22) {
+            const brightness = (r + g + b) / 3;
+            d[i + 3] = Math.min(d[i + 3], Math.max(0, Math.floor((255 - brightness) * 3.2)));
+        }
+    }
+    const d2 = new Uint8ClampedArray(d);
+    for (let y = 1; y < h - 1; y++) {
+        for (let x = 1; x < w - 1; x++) {
+            const pi = (y * w + x) * 4;
+            if (d[pi + 3] === 0) continue;
+            let tn = 0;
+            if (d[((y - 1) * w + x) * 4 + 3] === 0) tn++;
+            if (d[((y + 1) * w + x) * 4 + 3] === 0) tn++;
+            if (d[(y * w + x - 1) * 4 + 3] === 0) tn++;
+            if (d[(y * w + x + 1) * 4 + 3] === 0) tn++;
+            if (tn > 0) {
+                const br = (d[pi] + d[pi + 1] + d[pi + 2]) / 3;
+                if (br > 180) d2[pi + 3] = Math.floor(d[pi + 3] * Math.max(0, 1 - tn * 0.3));
+                else if (tn >= 2) d2[pi + 3] = Math.floor(d[pi + 3] * 0.65);
+            }
+        }
+    }
+    for (let i = 0; i < d.length; i++) d[i] = d2[i];
+    ctx.putImageData(imgData, 0, 0);
+}
+
+function measureAnchor(ctx) {
+    const w = ctx.canvas.width, h = ctx.canvas.height;
+    const d = ctx.getImageData(0, 0, w, h).data;
+    let minX = w, minY = h, maxX = 0, maxY = 0, count = 0;
+    const rowCount = new Uint16Array(h);
+    for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+            if (d[(y * w + x) * 4 + 3] < 24) continue;
+            count++;
+            rowCount[y]++;
+            if (x < minX) minX = x;
+            if (y < minY) minY = y;
+            if (x > maxX) maxX = x;
+            if (y > maxY) maxY = y;
+        }
+    }
+    if (!count) return null;
+    let top = minY;
+    const headXs = [];
+    const headLimit = Math.min(h - 1, top + 26);
+    for (let y = top; y <= headLimit; y++) {
+        for (let x = 0; x < w; x++) {
+            if (d[(y * w + x) * 4 + 3] >= 24) headXs.push(x);
+        }
+    }
+    headXs.sort((a, b) => a - b);
+    const headX = headXs.length ? headXs[headXs.length >> 1] : (minX + maxX) >> 1;
+    let footY = maxY;
+    for (let y = h - 1; y >= 0; y--) {
+        if (rowCount[y] >= 6) { footY = y; break; }
+    }
+    return { canvas: ctx.canvas, minX, minY, maxX, maxY, headX, footY };
+}
+
+function processAndSliceSheet(scene, rawKey, prefix, tolerance, cols, rows) {
+    const src = scene.textures.get(rawKey).getSourceImage();
+    const w = src.width, h = src.height;
+    const probe = document.createElement('canvas');
+    probe.width = w; probe.height = h;
+    const pctx = probe.getContext('2d', { willReadFrequently: true });
+    pctx.drawImage(src, 0, 0);
+    const pd = pctx.getImageData(0, 0, w, h).data;
+    const rowC = new Uint32Array(h);
+    const colC = new Uint32Array(w);
+    for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+            const i = (y * w + x) * 4;
+            const r = pd[i], g = pd[i + 1], b = pd[i + 2];
+            if (r > 236 && g > 236 && b > 236) continue;
+            rowC[y]++; colC[x]++;
+        }
+    }
+    let rb = bandsFromHist(rowC, Math.max(10, Math.floor(w * 0.012)));
+    let cb = bandsFromHist(colC, Math.max(10, Math.floor(h * 0.012)));
+    if (rb.length !== rows || cb.length !== cols) {
+        const y0 = rb.length ? rb[0][0] : 0;
+        const y1 = rb.length ? rb[rb.length - 1][1] : h - 1;
+        const x0 = cb.length ? cb[0][0] : 0;
+        const x1 = cb.length ? cb[cb.length - 1][1] : w - 1;
+        rb = []; cb = [];
+        for (let i = 0; i < rows; i++) {
+            const a = Math.floor(y0 + (y1 - y0 + 1) * i / rows);
+            const b = Math.floor(y0 + (y1 - y0 + 1) * (i + 1) / rows) - 1;
+            rb.push([a, b]);
+        }
+        for (let i = 0; i < cols; i++) {
+            const a = Math.floor(x0 + (x1 - x0 + 1) * i / cols);
+            const b = Math.floor(x0 + (x1 - x0 + 1) * (i + 1) / cols) - 1;
+            cb.push([a, b]);
+        }
+    }
+
+    const cells = [];
+    for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+            const x0 = cb[c][0], x1 = cb[c][1], y0 = rb[r][0], y1 = rb[r][1];
+            const cw = x1 - x0 + 1, ch = y1 - y0 + 1;
+            const cnv = document.createElement('canvas');
+            cnv.width = cw; cnv.height = ch;
+            const ctx = cnv.getContext('2d', { willReadFrequently: true });
+            ctx.drawImage(src, x0, y0, cw, ch, 0, 0, cw, ch);
+            chromaKeyCanvas(ctx, tolerance);
+            cells.push(measureAnchor(ctx));
+        }
+    }
+
+    let maxLeft = 8, maxRight = 8, maxUp = 8;
+    cells.forEach(cell => {
+        if (!cell) return;
+        maxLeft = Math.max(maxLeft, cell.headX - cell.minX);
+        maxRight = Math.max(maxRight, cell.maxX - cell.headX);
+        maxUp = Math.max(maxUp, cell.footY - cell.minY);
+    });
+    const pad = 4;
+    const fw = maxLeft + maxRight + pad * 2;
+    const fh = maxUp + pad * 2;
+    const originX = (pad + maxLeft) / fw;
+    const originY = (fh - pad) / fh;
+    cells.forEach((cell, idx) => {
+        const cnv = document.createElement('canvas');
+        cnv.width = fw; cnv.height = fh;
+        if (cell) {
+            const ctx = cnv.getContext('2d');
+            ctx.drawImage(cell.canvas, pad + maxLeft - cell.headX, (fh - pad) - cell.footY);
+        }
+        if (scene.textures.exists(prefix + idx)) scene.textures.remove(prefix + idx);
+        scene.textures.addCanvas(prefix + idx, cnv);
+    });
+    return { fw, fh, originX, originY };
+}
+
+function restoreVisualOffsets() {
+    if (player && player._appliedDy) {
+        player.y -= player._appliedDy;
+        player._appliedDy = 0;
+    }
+    for (let i = 0; i < enemies.length; i++) {
+        const s = enemies[i].sprite;
+        if (s && s._appliedDy) { s.y -= s._appliedDy; s._appliedDy = 0; }
+    }
+}
+
+function applyVisualOffsets() {
+    if (player && !playerDead) {
+        player.setRotation(player._wantRot || 0);
+        const dy = player._wantDy || 0;
+        if (dy) { player.y += dy; player._appliedDy = dy; }
+    }
+    for (let i = 0; i < enemies.length; i++) {
+        const e = enemies[i];
+        const s = e.sprite;
+        if (!s || e.dead || !s.body) continue;
+        const dy = e._wantDy || 0;
+        if (dy) { s.y += dy; s._appliedDy = dy; }
+    }
+}
+
+function applyFeetBody(sprite, dims, heightRatio) {
+    sprite.setOrigin(dims.originX, dims.originY);
+    const bw = Math.max(16, Math.round(dims.fh * 0.2));
+    const bh = Math.max(20, Math.round(dims.fh * heightRatio));
+    const footX = dims.fw * dims.originX;
+    const footY = dims.fh * dims.originY;
+    sprite.body.setSize(bw, bh);
+    sprite.body.setOffset(Math.round(footX - bw / 2), Math.round(footY - bh));
+    sprite.body.setMaxVelocityY(980);
 }
 
 // ============================================================
@@ -269,7 +395,6 @@ function preload() {
     this.load.image('archer_raw', 'enemy__archer.jpg');
     this.load.image('shield_raw', 'enemy_shield.jpg');
     this.load.image('assassin_raw', 'enemy_assasin.jpg');
-    this.load.image('hero_wallslide', 'hero_wall_slide.jpg');
 }
 
 // ============================================================
@@ -290,42 +415,17 @@ function create() {
     EnemyShield.dims = shieldDims;
     EnemyAssassin.dims = assassinDims;
     BossOni.dims = oniDims;
+    playerDims = samDims;
 
-    // --- Process wall slide sprite: ChromaKey + resize to match player frame ---
-    const wsRaw = this.textures.get('hero_wallslide').getSourceImage();
-    // First pass: full-size ChromaKey
-    const wsFull = document.createElement('canvas');
-    wsFull.width = wsRaw.width; wsFull.height = wsRaw.height;
-    const wsFullCtx = wsFull.getContext('2d');
-    wsFullCtx.drawImage(wsRaw, 0, 0);
-    const wsData = wsFullCtx.getImageData(0, 0, wsFull.width, wsFull.height);
-    const wd = wsData.data;
-    for (let i = 0; i < wd.length; i += 4) {
-        const r = wd[i], g = wd[i+1], b = wd[i+2];
-        if (r > 200 && g > 200 && b > 200) { wd[i+3] = 0; }
-        else if (r > 170 && g > 170 && b > 170 && Math.abs(r-g) < 25 && Math.abs(g-b) < 25) {
-            const br = (r+g+b)/3; wd[i+3] = Math.min(wd[i+3], Math.max(0, Math.floor((255-br)*3)));
-        }
-    }
-    wsFullCtx.putImageData(wsData, 0, 0);
-    // Second pass: resize to match samurai frame dimensions
-    const wsCanvas = document.createElement('canvas');
-    wsCanvas.width = samDims.fw; wsCanvas.height = samDims.fh;
-    const wsCtx = wsCanvas.getContext('2d');
-    wsCtx.drawImage(wsFull, 0, 0, samDims.fw, samDims.fh);
-    this.textures.remove('hero_wallslide');
-    this.textures.addCanvas('hero_wallslide', wsCanvas);
+    // --- PLAYER (origin sits on the feet, under the head) ---
+    player = this.physics.add.sprite(280, 600, 'sam_f4');
+    player.setScale(PLAYER_HEIGHT / samDims.fh).setBounce(0).setCollideWorldBounds(true).setDepth(10);
+    applyFeetBody(player, samDims, 0.58);
+    player.currentAnim = '';
+    player._wantDy = 0; player._wantRot = 0; player._appliedDy = 0; player._runPhase = 0; player._prevStep = 0;
 
-    // --- PLAYER ---
-    player = this.physics.add.sprite(200, 550, 'sam_f0');
-    player.setScale(CHAR_SCALE).setBounce(0).setCollideWorldBounds(true).setDepth(10);
-    const pBw = Math.floor(samDims.fw * 0.25);
-    const pBh = Math.floor(samDims.fh * 0.45);
-    const pBx = Math.floor((samDims.fw - pBw) / 2);
-    const pBy = Math.floor(samDims.fh * 0.32);
-    player.body.setSize(pBw, pBh).setOffset(pBx, pBy);
-    player.body.setMaxVelocityY(900);
-    player.animFrame = 0; player.animTimer = 0; player.currentAnim = 'idle';
+    this.events.on('preupdate', restoreVisualOffsets);
+    this.events.on('postupdate', applyVisualOffsets);
 
     // --- PLAYER GLOW ---
     const gc = document.createElement('canvas'); gc.width = 300; gc.height = 300;
@@ -397,42 +497,31 @@ function buildRoom(scene, roomName) {
     walls = scene.physics.add.staticGroup();
 
     if (roomName === 'main') {
-        // Oversized background to cover any aspect ratio stretching
-        const bg = scene.add.image(W / 2, H / 2, 'bg_castle').setDepth(0).setDisplaySize(W * 1.15, H * 1.15);
-        roomObjects.push(bg);
+        // Castle art is 4:3 with black bars. Fit it, don't stretch it.
+        // Crop source y 115-908 removes the letterbox baked into the jpg.
+        addFittedBackdrop(scene, 'bg_castle', { x: 0, y: 115, w: 1023, h: 793 });
         drawFog(scene);
 
-        // ===== VISIBLE PLATFORMS — Japanese themed =====
-        // Ground level (full width courtyard floor)
-        makeVisiblePlatform(scene, 640, 695, 1280, 22, 'ground');
+        // Walk lines sit on the painted courtyard, the stair, and the side roofs.
+        // y values below are the TOP of each ledge. Centers are top + thickness/2.
+        const groundTop = 652;
+        makeVisiblePlatform(scene, 640, groundTop + 14, 1400, 28, 'ground');
 
-        // --- Staircase steps (center stairs going up to palace door) ---
-        makeVisiblePlatform(scene, 640, 648, 280, 12, 'stone');
-        makeVisiblePlatform(scene, 640, 610, 240, 12, 'stone');
-        makeVisiblePlatform(scene, 640, 572, 200, 12, 'stone');
+        // Center stairs, wide at the courtyard, narrow at the door.
+        makeVisiblePlatform(scene, 640, 624 + 6, 210, 12, 'stone');
+        makeVisiblePlatform(scene, 640, 592 + 6, 168, 12, 'stone');
+        makeVisiblePlatform(scene, 640, 560 + 6, 132, 12, 'stone');
+        makeVisiblePlatform(scene, 640, 528 + 6, 104, 12, 'stone');
 
-        // --- Left stone ledge (left building roof/ledge) ---
-        makeVisiblePlatform(scene, 180, 540, 200, 12, 'wood');
-        makeVisiblePlatform(scene, 120, 430, 160, 12, 'wood');
+        // Side roofs. A lower perch makes the upper roof a single jump away.
+        makeVisiblePlatform(scene, 310, 516 + 6, 150, 12, 'wood');
+        makeVisiblePlatform(scene, 970, 516 + 6, 150, 12, 'wood');
+        makeVisiblePlatform(scene, 340, 412 + 6, 180, 12, 'wood');
+        makeVisiblePlatform(scene, 940, 412 + 6, 180, 12, 'wood');
 
-        // --- Right stone ledge (right building roof/ledge) ---
-        makeVisiblePlatform(scene, 1100, 540, 200, 12, 'wood');
-        makeVisiblePlatform(scene, 1160, 430, 160, 12, 'wood');
-
-        // --- Palace balcony/roof levels ---
-        makeVisiblePlatform(scene, 640, 455, 380, 12, 'balcony');
-        makeVisiblePlatform(scene, 640, 345, 320, 12, 'balcony');
-        makeVisiblePlatform(scene, 640, 255, 260, 12, 'balcony');
-
-        // --- Lantern posts (small perches on left/right) ---
-        makeVisiblePlatform(scene, 330, 590, 70, 10, 'wood');
-        makeVisiblePlatform(scene, 950, 590, 70, 10, 'wood');
-
-        // --- Side walls ---
         makeInvisibleWall(scene, 8, 360, 16, 720);
         makeInvisibleWall(scene, 1272, 360, 16, 720);
 
-        // ===== ENEMIES — distributed across platforms =====
         totalEnemiesInRoom = 8;
         const spawnEnemy = (Type, x, y) => {
             const e = new Type(scene, x, y);
@@ -440,39 +529,33 @@ function buildRoom(scene, roomName) {
             scene.physics.add.collider(e.sprite, platforms);
             scene.physics.add.collider(e.sprite, walls);
         };
-        // Ground level (2 enemies)
-        spawnEnemy(EnemyOni, 900, 640);
-        spawnEnemy(EnemyShield, 350, 640);
-        // On stairs — waiting for player to climb
-        spawnEnemy(EnemyAssassin, 640, 520);
-        // Left wood ledge
-        spawnEnemy(EnemyArcher, 180, 490);
-        // Right wood ledge
-        spawnEnemy(EnemyArcher, 1100, 490);
-        // Lantern post left
-        spawnEnemy(EnemyAssassin, 330, 540);
-        // 1st floor balcony — guarding the palace
-        spawnEnemy(EnemyOni, 580, 400);
-        // 2nd floor balcony — archer with height advantage
-        spawnEnemy(EnemyArcher, 700, 290);
+        spawnEnemy(EnemyShield, 430, 620);
+        spawnEnemy(EnemyOni, 980, 620);
+        spawnEnemy(EnemyAssassin, 640, 590);
+        spawnEnemy(EnemyAssassin, 310, 490);
+        spawnEnemy(EnemyOni, 970, 490);
+        spawnEnemy(EnemyArcher, 340, 390);
+        spawnEnemy(EnemyArcher, 940, 390);
+        spawnEnemy(EnemyOni, 700, 530);
 
     } else if (roomName === 'boss') {
-        const bg = scene.add.image(W / 2, H / 2, 'bg_boss').setDepth(0).setDisplaySize(W * 1.15, H * 1.15);
-        roomObjects.push(bg);
+        addFittedBackdrop(scene, 'bg_boss', null);
         drawFog(scene);
 
-        // Boss arena platforms
-        makeVisiblePlatform(scene, 640, 695, 1280, 22, 'ground');
-        makeVisiblePlatform(scene, 200, 540, 160, 12, 'stone');
-        makeVisiblePlatform(scene, 1080, 540, 160, 12, 'stone');
-        makeVisiblePlatform(scene, 640, 460, 280, 12, 'balcony');
-        makeVisiblePlatform(scene, 400, 580, 100, 12, 'wood');
-        makeVisiblePlatform(scene, 880, 580, 100, 12, 'wood');
+        // Ledges follow the painted balconies, the broken bridge, and the floor.
+        const groundTop = 600;
+        makeVisiblePlatform(scene, 640, groundTop + 16, 1400, 32, 'ground');
+        makeVisiblePlatform(scene, 230, 514 + 6, 150, 12, 'wood');
+        makeVisiblePlatform(scene, 1050, 514 + 6, 150, 12, 'wood');
+        makeVisiblePlatform(scene, 300, 424 + 6, 230, 12, 'balcony');
+        makeVisiblePlatform(scene, 980, 424 + 6, 230, 12, 'balcony');
+        makeVisiblePlatform(scene, 640, 458 + 6, 170, 12, 'stone');
+        makeVisiblePlatform(scene, 430, 300 + 6, 130, 12, 'stone');
+        makeVisiblePlatform(scene, 850, 300 + 6, 130, 12, 'stone');
         makeInvisibleWall(scene, 8, 360, 16, 720);
         makeInvisibleWall(scene, 1272, 360, 16, 720);
 
-        // Boss
-        boss = new BossOni(scene, 900, 600);
+        boss = new BossOni(scene, 900, 560);
         enemies.push(boss);
         scene.physics.add.collider(boss.sprite, platforms);
         scene.physics.add.collider(boss.sprite, walls);
@@ -513,8 +596,8 @@ function openMysticPortal() {
     portalActive = true;
     playPortalSound();
 
-    // Portal at the palace door coordinates (center of background)
-    const px = 640, py = 560;
+    // Portal sits in the palace doorway, at the top of the stair.
+    const px = 640, py = 490;
 
     portalGfx = gameScene.add.graphics().setDepth(5);
     // Mystical energy circle
@@ -564,7 +647,8 @@ function openMysticPortal() {
     roomObjects.push(lbl);
 
     // Physics zone for portal collision
-    portalZone = { x: px, y: py, w: 50, h: 60 };
+    // Feet land on the top step (y ≈ 528). w/h are half-extents.
+    portalZone = { x: 640, y: 520, w: 58, h: 42 };
 
     // Camera flash
     gameScene.cameras.main.flash(400, 100, 50, 200);
@@ -585,7 +669,7 @@ function transitionToRoom(targetRoom) {
         targets: fade, alpha: 1, duration: 400,
         onComplete: () => {
             clearRoom();
-            player.setPosition(200, 600);
+            player.setPosition(280, 600);
             player.body.setVelocity(0, 0);
             buildRoom(gameScene, targetRoom);
             gameScene.tweens.add({
@@ -723,10 +807,10 @@ function selectUpgrade(upg) {
 // ============================================================
 // Platform visual styles
 const PLAT_STYLES = {
-    ground:  { fill: 0x2a1a0e, border: 0x3d2b1a, highlight: 0x4a3520, alpha: 0.95 },
-    stone:   { fill: 0x1e1e28, border: 0x333345, highlight: 0x44445a, alpha: 0.9 },
-    wood:    { fill: 0x3a2210, border: 0x5a3820, highlight: 0x6a4828, alpha: 0.9 },
-    balcony: { fill: 0x2a1515, border: 0x5a2020, highlight: 0x7a3030, alpha: 0.85 }
+    ground:  { fill: 0x1a0e0a, border: 0xc45a3a, highlight: 0xffc2a8, alpha: 0.55 },
+    stone:   { fill: 0x16161e, border: 0x9a8a78, highlight: 0xffe2c4, alpha: 0.82 },
+    wood:    { fill: 0x2a160c, border: 0xc47848, highlight: 0xffd0a0, alpha: 0.88 },
+    balcony: { fill: 0x241010, border: 0xd06060, highlight: 0xffb0b0, alpha: 0.88 }
 };
 
 function makeVisiblePlatform(scene, x, y, w, h, style) {
@@ -738,7 +822,7 @@ function makeVisiblePlatform(scene, x, y, w, h, style) {
         g.fillStyle(st.fill, st.alpha);
         g.fillRoundedRect(0, 0, w, h, Math.min(3, h / 2));
         // Top highlight line
-        g.lineStyle(1, st.highlight, 0.6);
+        g.lineStyle(2, st.highlight, 0.95);
         g.lineBetween(2, 1, w - 2, 1);
         // Bottom border
         g.lineStyle(1, st.border, 0.5);
@@ -776,6 +860,27 @@ function makeInvisibleWall(scene, x, y, w, h) {
     wall.refreshBody();
 }
 
+function addFittedBackdrop(scene, key, crop) {
+    const src = scene.textures.get(key).getSourceImage();
+    const sx = crop ? crop.x : 0;
+    const sy = crop ? crop.y : 0;
+    const sw = crop ? crop.w : src.width;
+    const sh = crop ? crop.h : src.height;
+    const scale = Math.min(W / sw, H / sh);
+    const dw = Math.round(sw * scale);
+    const dh = Math.round(sh * scale);
+    const cnv = document.createElement('canvas');
+    cnv.width = dw; cnv.height = dh;
+    const ctx = cnv.getContext('2d');
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(src, sx, sy, sw, sh, 0, 0, dw, dh);
+    const tkey = key + '_fit_' + (crop ? crop.y : 0);
+    if (scene.textures.exists(tkey)) scene.textures.remove(tkey);
+    scene.textures.addCanvas(tkey, cnv);
+    const img = scene.add.image(Math.round((W - dw) / 2) + dw / 2, Math.round((H - dh) / 2) + dh / 2, tkey).setDepth(0);
+    roomObjects.push(img);
+}
+
 function drawFog(scene) {
     const fogG = scene.add.graphics().setDepth(1);
     fogG.fillGradientStyle(0x000000, 0x000000, 0x0a0404, 0x0a0404, 0, 0, 0.25, 0.25);
@@ -801,15 +906,12 @@ class Enemy {
         this.animName = 'idle'; this.animFrame = 0; this.animTimer = 0;
 
         this.sprite = scene.physics.add.sprite(x, y, config.prefix + '0');
-        this.sprite.setScale(config.scale).setDepth(10).setBounce(0).setCollideWorldBounds(true);
-        this.sprite.body.setMaxVelocityY(900);
-
-        const dims = config.dims || { fw: 256, fh: 256 };
-        const bw = Math.floor(dims.fw * config.bodyWRatio);
-        const bh = Math.floor(dims.fh * config.bodyHRatio);
-        const bx = Math.floor((dims.fw - bw) / 2);
-        const by = Math.floor(dims.fh * config.bodyYOffset);
-        this.sprite.body.setSize(bw, bh).setOffset(bx, by);
+        const dims = config.dims || { fw: 256, fh: 256, originX: 0.5, originY: 0.92 };
+        const targetH = config.pixelHeight || ENEMY_HEIGHT;
+        this.sprite.setScale(targetH / dims.fh).setDepth(10).setBounce(0).setCollideWorldBounds(true);
+        applyFeetBody(this.sprite, dims, 0.55);
+        this._wantDy = 0;
+        this._phase = Math.random() * 6;
 
         this.hpGfx = scene.add.graphics().setDepth(22);
         this.typeLabel = scene.add.text(x, y - 52, config.label || '', {
@@ -817,9 +919,15 @@ class Enemy {
         }).setOrigin(0.5).setDepth(23).setAlpha(0.8);
     }
 
+    headY() {
+        const s = this.sprite;
+        return s.y - s.displayHeight * s.originY;
+    }
+
     drawHP() {
         const s = this.sprite, g = this.hpGfx; g.clear();
-        const bx = s.x - 24, by = s.y - 48, bw = 48, bh = 5;
+        const head = this.headY();
+        const bx = s.x - 24, by = head - 8, bw = 48, bh = 5;
         const ratio = Math.max(0, this.hp / this.maxHp);
         const fillW = Math.floor((bw - 2) * ratio);
         g.fillStyle(0x000000, 0.6); g.fillRoundedRect(bx, by, bw, bh, 2);
@@ -828,7 +936,7 @@ class Enemy {
             let color = ratio > 0.6 ? 0x22cc55 : ratio > 0.3 ? 0xcccc22 : 0xcc2222;
             g.fillStyle(color, 0.85); g.fillRoundedRect(bx + 1, by + 1, fillW, bh - 2, 1);
         }
-        this.typeLabel.setPosition(s.x, s.y - 55);
+        this.typeLabel.setPosition(s.x, head - 16);
     }
 
     playAnim(name) {
@@ -840,7 +948,22 @@ class Enemy {
 
     updateAnim(delta) {
         const anim = this.config.anims[this.animName];
-        if (!anim || anim.frames.length <= 1) return;
+        if (!anim) return;
+        // Locomotion sheets are stills, not cycles. Hold one pose and bob with speed.
+        if (this.animName === 'idle' || this.animName === 'walk' || this.animName === 'run' || this.animName === 'flee') {
+            this.sprite.setTexture(this.config.prefix + anim.frames[0]);
+            const vx = this.sprite.body ? Math.abs(this.sprite.body.velocity.x) : 0;
+            if (vx > 24) {
+                this._phase += vx * delta * 0.00005;
+                this._wantDy = Math.sin(this._phase) * 2.6;
+            } else this._wantDy = 0;
+            return;
+        }
+        this._wantDy = 0;
+        if (anim.frames.length <= 1) {
+            this.sprite.setTexture(this.config.prefix + anim.frames[0]);
+            return;
+        }
         this.animTimer += delta;
         if (this.animTimer >= 1000 / anim.fps) {
             this.animTimer -= 1000 / anim.fps; this.animFrame++;
@@ -856,7 +979,7 @@ class Enemy {
         this.sprite.body.setVelocityX(dir * 300); this.sprite.body.setVelocityY(-100);
         playHitSound();
         // Damage number
-        const txt = gameScene.add.text(this.sprite.x, this.sprite.y - 30, '-' + finalDmg, {
+        const txt = gameScene.add.text(this.sprite.x, this.headY() + 10, '-' + finalDmg, {
             fontFamily: 'monospace', fontSize: '14px', color: '#ff4444', fontStyle: 'bold'
         }).setOrigin(0.5).setDepth(30);
         gameScene.tweens.add({ targets: txt, y: txt.y - 30, alpha: 0, duration: 600, onComplete: () => txt.destroy() });
@@ -899,7 +1022,8 @@ class Enemy {
     checkHitPlayer() {
         if (isDashing || playerHurtTimer > 0 || playerHP <= 0 || playerDead) return;
         const dx = Math.abs(player.x - this.sprite.x), dy = Math.abs(player.y - this.sprite.y);
-        if (dx < 50 && dy < 50) {
+        const reach = this.config.attackRange ? Math.min(this.config.attackRange, this instanceof BossOni ? 100 : 62) : 56;
+        if (dx < reach && dy < 72) {
             if (isParrying && parryWindow > 0) {
                 triggerParrySuccess(gameScene);
                 this.hurtTimer = 300; this.sprite.body.setVelocityX((this.facingRight ? -1 : 1) * 300);
@@ -926,6 +1050,7 @@ class Enemy {
         const s = this.sprite;
         if (!s || !s.body) return;
         if (this.hurtTimer > 0) {
+            this._wantDy = 0;
             this.hurtTimer -= delta;
             s.setTint(this.hurtTimer % 100 > 50 ? 0xffffff : 0xff4444);
             this.drawHP(); this.updateAnim(delta); return;
@@ -977,7 +1102,7 @@ class EnemyOni extends Enemy {
     constructor(scene, x, y) {
         super(scene, x, y, {
             prefix: 'oni_f', label: 'ONI', labelColor: '#cc66ff',
-            hp: 120, scale: 0.55, attackDmg: 18, knockback: 280,
+            hp: 120, pixelHeight: ENEMY_HEIGHT, attackDmg: 18, knockback: 280,
             speed: 110, chaseRange: 300, attackRange: 55,
             attackDur: 550, attackCooldown: 1300,
             bodyWRatio: 0.30, bodyHRatio: 0.50, bodyYOffset: 0.30,
@@ -1014,7 +1139,7 @@ class EnemyArcher extends Enemy {
     constructor(scene, x, y) {
         super(scene, x, y, {
             prefix: 'archer_f', label: 'ARCHER', labelColor: '#44cc44',
-            hp: 70, scale: 0.50, attackDmg: 10, knockback: 200,
+            hp: 70, pixelHeight: ENEMY_HEIGHT, attackDmg: 10, knockback: 200,
             speed: 130, chaseRange: 400, attackRange: 250, fleeRange: 100,
             attackDur: 600, attackCooldown: 1800,
             bodyWRatio: 0.28, bodyHRatio: 0.50, bodyYOffset: 0.30,
@@ -1055,7 +1180,7 @@ class EnemyShield extends Enemy {
     constructor(scene, x, y) {
         super(scene, x, y, {
             prefix: 'shield_f', label: 'SHIELD', labelColor: '#ff6644',
-            hp: 200, scale: 0.55, attackDmg: 20, knockback: 350,
+            hp: 200, pixelHeight: ENEMY_HEIGHT, attackDmg: 20, knockback: 350,
             speed: 55, chaseRange: 250, attackRange: 50,
             attackDur: 700, attackCooldown: 2000,
             bodyWRatio: 0.35, bodyHRatio: 0.55, bodyYOffset: 0.28,
@@ -1102,7 +1227,7 @@ class EnemyAssassin extends Enemy {
     constructor(scene, x, y) {
         super(scene, x, y, {
             prefix: 'assassin_f', label: 'ASSASSIN', labelColor: '#44ddcc',
-            hp: 80, scale: 0.50, attackDmg: 22, knockback: 200,
+            hp: 80, pixelHeight: ENEMY_HEIGHT, attackDmg: 22, knockback: 200,
             speed: 220, chaseRange: 350, attackRange: 45,
             attackDur: 350, attackCooldown: 900,
             bodyWRatio: 0.26, bodyHRatio: 0.50, bodyYOffset: 0.30,
@@ -1143,7 +1268,7 @@ class BossOni extends Enemy {
     constructor(scene, x, y) {
         super(scene, x, y, {
             prefix: 'oni_f', label: '', labelColor: '#ff2222',
-            hp: 600, scale: 1.20, attackDmg: 25, knockback: 400,
+            hp: 600, pixelHeight: BOSS_HEIGHT, attackDmg: 25, knockback: 400,
             speed: 80, chaseRange: 600, attackRange: 80,
             attackDur: 600, attackCooldown: 1500,
             bodyWRatio: 0.30, bodyHRatio: 0.50, bodyYOffset: 0.30,
@@ -1260,7 +1385,8 @@ function updateProjectiles(delta) {
         p.life -= delta; p.x += p.vx*(delta/1000); p.y += p.vy*(delta/1000);
         p.gfx.setPosition(p.x, p.y);
         if (!isDashing && playerHurtTimer <= 0 && playerHP > 0 && !playerDead) {
-            if (Math.abs(p.x-player.x)<20 && Math.abs(p.y-player.y)<30) {
+            const bodyTop = player.y - PLAYER_HEIGHT * 0.85;
+            if (Math.abs(p.x - player.x) < 26 && p.y < player.y && p.y > bodyTop) {
                 playerHP -= p.dmg; playerHurtTimer = PLAYER_HURT_IFRAMES; playHurtSound();
                 player.body.setVelocityX((p.vx>0?1:-1)*150); player.body.setVelocityY(-80);
                 player.setTint(0xff4444); gameScene.cameras.main.shake(60,0.003);
@@ -1311,60 +1437,40 @@ function drawPlayerHP() {
 function updateHUD() { drawPlayerHP(); }
 
 // ============================================================
-//  PLAYER ANIMATION (3x3 = 9 frames)
+//  PLAYER POSES
+//  The sheet is 9 combat stills. Cycling them as a walk made
+//  the sword teleport. Each state holds one pose. Running,
+//  jumping and wall-sliding are sold by bob, lean and dust
+//  locked to velocity.
+//  0 guard low, 1 cross guard, 2 wide heavy cut,
+//  3 low cut, 4 neutral guard, 5 extended cut,
+//  6 low guard, 7 two-hand parry, 8 forward cut
 // ============================================================
-const ANIMS = {
-    idle:      { frames: [0, 1, 2], fps: 6, loop: true },
-    run:       { frames: [3, 4, 5], fps: 10, loop: true },
-    attack1:   { frames: [6, 7], fps: 14, loop: false },
-    attack2:   { frames: [7, 8], fps: 14, loop: false },
-    attack3:   { frames: [8, 6], fps: 14, loop: false },
-    attack4:   { frames: [6, 7, 8], fps: 16, loop: false },
-    attack5:   { frames: [8, 7, 6], fps: 10, loop: false },
-    runattack: { frames: [6, 7, 8], fps: 16, loop: false },
-    airattack: { frames: [7, 8], fps: 14, loop: false },
-    jump:      { frames: [3], fps: 1, loop: false },
-    fall:      { frames: [4], fps: 1, loop: false },
-    wallslide: { frames: [5], fps: 1, loop: false },
-    dash:      { frames: [6], fps: 1, loop: false },
-    parry:     { frames: [1], fps: 1, loop: false },
-    death:     { frames: [6, 7, 8], fps: 3, loop: false }
+const POSE = {
+    idle: 4,
+    run: 4,
+    jump: 8,
+    fall: 5,
+    wall: 4,
+    dash: 8,
+    parry: 7,
+    death: 2,
+    jab: 3,
+    cross: 5,
+    hook: 8,
+    upper: 2,
+    heavy: 2,
+    runattack: 8,
+    airattack: 5
 };
 
 function playAnim(name) {
-    if (!player || playerDeadFrozen) return; // Block ALL anim changes once dead-frozen
+    if (!player || playerDeadFrozen) return;
     if (player.currentAnim === name) return;
-    player.currentAnim = name; player.animFrame = 0; player.animTimer = 0;
-    // Wall slide uses separate loaded image
-    if (name === 'wallslide') {
-        player.setTexture('hero_wallslide');
-        return;
-    }
-    player.setTexture('sam_f' + ANIMS[name].frames[0]);
-}
-
-function updateAnimation(delta) {
-    if (!player || playerDeadFrozen) return; // Frozen = no more updates
-    const anim = ANIMS[player.currentAnim];
-    if (!anim || anim.frames.length <= 1) return;
-    player.animTimer += delta;
-    if (player.animTimer >= 1000 / anim.fps) {
-        player.animTimer -= 1000 / anim.fps; player.animFrame++;
-        if (player.animFrame >= anim.frames.length) {
-            if (anim.loop) { player.animFrame = 0; }
-            else {
-                player.animFrame = anim.frames.length - 1;
-                // If death animation finished, freeze permanently
-                if (player.currentAnim === 'death') {
-                    playerDeadFrozen = true;
-                    return;
-                }
-            }
-        }
-        if (player.currentAnim !== 'wallslide') {
-            player.setTexture('sam_f' + anim.frames[player.animFrame]);
-        }
-    }
+    player.currentAnim = name;
+    const frame = POSE[name];
+    if (frame === undefined) return;
+    player.setTexture('sam_f' + frame);
 }
 
 // ============================================================
@@ -1375,6 +1481,7 @@ function playerDeath() {
     if (playerDead) return;
     playerDead = true; playerHP = 0; updateHUD();
     playDeathSound(); playAnim('death');
+    playerDeadFrozen = true;
     player.body.setVelocityX(0); player.body.setVelocityY(0);
 
     const fl = gameScene.add.rectangle(W/2, H/2, W * 2, H * 2, 0xff0000, 0.4).setDepth(200).setScrollFactor(0);
@@ -1407,8 +1514,8 @@ function playerDeath() {
     gameScene.time.delayedCall(1500, () => {
         const reviveHandler = () => {
             playerDead = false; playerDeadFrozen = false; playerHP = playerMaxHP; playerHurtTimer = PLAYER_HURT_IFRAMES; updateHUD();
-            player.setAlpha(1).clearTint().setScale(CHAR_SCALE);
-            player.setPosition(200, 550); player.body.setVelocity(0, 0);
+            player.setAlpha(1).clearTint().setScale(PLAYER_HEIGHT / playerDims.fh).setRotation(0);
+            player.setPosition(280, 600); player.body.setVelocity(0, 0); player.currentAnim = ''; playAnim('idle');
             player.setRotation(0);
             player.body.allowGravity = true;
             deathUI.forEach(obj => { if (obj && obj.destroy) obj.destroy(); }); deathUI = [];
@@ -1423,16 +1530,15 @@ function playerDeath() {
 // ============================================================
 function update(time, delta) {
     if (!player || !player.body) return;
-    if (playerDead) {
-        if (!playerDeadFrozen) updateAnimation(delta);
-        return;
-    }
+    player._wantDy = 0;
+    player._wantRot = 0;
+    if (playerDead) return;
     if (playerHP <= 0) return;
     if (transitioning || upgradeActive) return;
 
     emberTimer -= delta;
     if (emberTimer <= 0) { spawnEmber(gameScene); emberTimer = Phaser.Math.Between(100, 250); }
-    if (playerGlow) playerGlow.setPosition(player.x, player.y - 10);
+    if (playerGlow) playerGlow.setPosition(player.x, player.y - 48);
 
     if (playerHurtTimer > 0) {
         playerHurtTimer -= delta;
@@ -1455,6 +1561,7 @@ function update(time, delta) {
 
     updatePartySystem();
     enemies.forEach(e => e.update(delta));
+    if (playerDead) return;
     updateProjectiles(delta);
     updateParry(delta);
     if (comboTimer > 0) { comboTimer -= delta; if (comboTimer <= 0) resetCombo(); }
@@ -1464,9 +1571,7 @@ function update(time, delta) {
         if (Math.abs(player.x - portalZone.x) < portalZone.w && Math.abs(player.y - portalZone.y) < portalZone.h) {
             // Show upgrade before boss if not yet picked
             if (upgradesPicked === 0) {
-                showUpgradeSelection();
-                upgradesPicked++;
-                // After upgrade, transition happens on next portal touch
+                if (!upgradeActive) showUpgradeSelection();
                 return;
             }
             transitionToRoom('boss');
@@ -1475,7 +1580,8 @@ function update(time, delta) {
     }
 
     if (isAttacking) {
-        attackTimer -= delta; updateAnimation(delta);
+        attackTimer -= delta;
+        player._wantRot = (facingRight ? 1 : -1) * 0.04;
         if (attackTimer <= 0) { isAttacking = false; clearSlash(); }
         else return;
     }
@@ -1489,7 +1595,12 @@ function update(time, delta) {
     else if (coyoteTimer > 0) coyoteTimer -= delta;
     if (jumpBufferTimer > 0) jumpBufferTimer -= delta;
 
-    if (isDashing) { dashTime -= delta; if (dashTime <= 0) endDash(); else { spawnDashGhost(gameScene); return; } }
+    if (isDashing) {
+        dashTime -= delta;
+        player._wantRot = (facingRight ? 1 : -1) * 0.12;
+        if (dashTime <= 0) endDash();
+        else { spawnDashGhost(gameScene); return; }
+    }
 
     const mL = keys.A.isDown || cursors.left.isDown;
     const mR = keys.D.isDown || cursors.right.isDown;
@@ -1520,20 +1631,47 @@ function update(time, delta) {
     if (jumpBufferTimer > 0) {
         if (onWall && !onGround) { body.setVelocityX((wallDirection===-1?1:-1)*WALL_JUMP_X); body.setVelocityY(WALL_JUMP_Y); facingRight=wallDirection===-1; jumpCount=0; onWall=false; jumpBufferTimer=0; }
         else if (onGround||coyoteTimer>0) { body.setVelocityY(JUMP_FORCE); jumpCount=1; jumpBufferTimer=0; coyoteTimer=0; }
-        else if (jumpCount>0&&jumpCount<maxJumps) { body.setVelocityY(DOUBLE_JUMP_FORCE); jumpCount=maxJumps; jumpBufferTimer=0; spawnJumpPuff(gameScene,player.x,player.y+30); }
+        else if (jumpCount>0&&jumpCount<maxJumps) { body.setVelocityY(DOUBLE_JUMP_FORCE); jumpCount=maxJumps; jumpBufferTimer=0; spawnJumpPuff(gameScene,player.x,player.y); }
     }
 
     if (!isAttacking && !isDashing && !isParrying) {
-        if (onWall && !onGround) playAnim('wallslide');
-        else if (!onGround) { body.velocity.y < 0 ? playAnim('jump') : playAnim('fall'); }
+        if (onWall && !onGround) playAnim('wall');
+        else if (!onGround) playAnim(body.velocity.y < 0 ? 'jump' : 'fall');
         else if (isMoving) playAnim('run');
         else playAnim('idle');
     }
-    updateAnimation(delta);
+
+    // Motion that matches the velocity, instead of a fake frame cycle.
+    const speed = Math.abs(body.velocity.x);
+    if (onWall && !onGround && !isDashing) {
+        player._wantRot = (onL ? -1 : 1) * 0.2;
+    } else if (!onGround && !isDashing && !isParrying) {
+        player._wantRot = (facingRight ? 1 : -1) * (body.velocity.y < 0 ? 0.07 : 0.11);
+    } else if (onGround && speed > 30 && !isParrying && !isDashing) {
+        player._runPhase += speed * delta * 0.000055;
+        player._wantDy = Math.sin(player._runPhase) * 3.4;
+        player._wantRot = (facingRight ? 1 : -1) * Math.min(0.07, speed / 7000);
+        const step = Math.sin(player._runPhase);
+        if (player._prevStep < 0 && step >= 0) spawnFootDust(gameScene, player.x, player.y);
+        player._prevStep = step;
+    }
 
     if (Phaser.Input.Keyboard.JustDown(keys.SHIFT) && canDash && !isDashing) startDash(gameScene);
     if (Phaser.Input.Keyboard.JustDown(keys.X)) triggerAttack(isMoving, onGround);
     if (Phaser.Input.Keyboard.JustDown(keys.C)) triggerParry();
+}
+
+function spawnFootDust(scene, x, y) {
+    for (let i = 0; i < 3; i++) {
+        const px = x + Phaser.Math.Between(-8, 8);
+        const p = scene.add.circle(px, y - 2, Phaser.Math.Between(2, 3), 0x886655, 0.45).setDepth(8);
+        scene.tweens.add({
+            targets: p,
+            x: px + (facingRight ? -1 : 1) * Phaser.Math.Between(6, 16),
+            y: y - Phaser.Math.Between(2, 8),
+            alpha: 0, duration: 220, onComplete: () => p.destroy()
+        });
+    }
 }
 
 function spawnJumpPuff(scene, x, y) {
@@ -1557,20 +1695,17 @@ function triggerAttack(isMoving, onGround) {
     let atk, animName;
 
     if (!onGround) {
-        // Air attack
         atk = AIR_ATTACK;
-        animName = 'airattack';
+        animName = atk.pose;
         comboStep = 0; comboTimer = 0;
     } else if (isMoving) {
-        // Run-attack: dash-cut
         atk = RUN_ATTACK;
-        animName = 'runattack';
+        animName = atk.pose;
         comboStep = 0; comboTimer = 0;
     } else {
-        // Standing 5-hit combo
         const step = comboStep % 5;
         atk = ATTACKS[step];
-        animName = 'attack' + (step + 1);
+        animName = atk.pose;
         comboStep = step + 1;
         comboTimer = COMBO_WINDOW;
     }
