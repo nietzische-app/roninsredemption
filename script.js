@@ -517,7 +517,7 @@ const ROOMS = {
     },
     garden: {
         title: 'Yılan Bahçesi',
-        line: 'Yılanlar zemini tutmuş. Peronlar alçak ve geniş. Kayarak kesmen yeter.',
+        line: 'Yılanlar zemini tutmuş. Peronlar alçak ve geniş. Aşağı + X ile kayarak kes.',
         bg: 'bg_castle', crop: CASTLE_CROP, tint: 0x6ea86a, layout: 'garden',
         spawn: { x: 640, y: 590 },
         portal: { x: 700, y: 590, w: 80, h: 55 },
@@ -2059,7 +2059,7 @@ function spawnJumpPuff(scene, x, y) {
 // ============================================================
 //  COMBAT — 5-HIT ARCADE COMBO (SF/TMNT Style)
 //  Standing: JAB → CROSS → HOOK → UPPERCUT → HEAVY SLASH
-//  Moving + X: DASH CUT | Air + X: AIR SLASH
+//  Moving + X: DASH CUT | Down + X: KAYMA (low) | Air + X: AIR SLASH
 // ============================================================
 function triggerAttack(isMoving, onGround) {
     if (!canAttack || isDashing || isParrying || playerHP <= 0 || playerDead || upgradeActive) return;
@@ -2073,7 +2073,8 @@ function triggerAttack(isMoving, onGround) {
         atk = AIR_ATTACK;
         animName = atk.pose;
         comboStep = 0; comboTimer = 0;
-    } else if (isMoving) {
+    } else if (dropHeld()) {
+        // Low cut only while Down/S is held. Walking + X stays a standing slash.
         atk = SLIDE_ATTACK;
         animName = atk.pose;
         comboStep = 0; comboTimer = 0;
@@ -2081,6 +2082,10 @@ function triggerAttack(isMoving, onGround) {
         player._slideHits = [];
         player._slideDust = 0;
         player.body.setVelocityY(Math.max(0, player.body.velocity.y));
+    } else if (isMoving) {
+        atk = RUN_ATTACK;
+        animName = atk.pose;
+        comboStep = 0; comboTimer = 0;
     } else {
         const step = comboStep % 5;
         atk = ATTACKS[step];
@@ -2125,7 +2130,7 @@ function triggerAttack(isMoving, onGround) {
 
     // Show combo name
     const colors = ['#ccddff', '#aabbff', '#ff8899', '#ffaa44', '#ff3322'];
-    const colorIdx = (!onGround) ? 2 : (isMoving ? 4 : Math.min(comboStep - 1, 4));
+    const colorIdx = (!onGround) ? 2 : (player._slide ? 4 : (isMoving ? 3 : Math.min(comboStep - 1, 4)));
     gameScene.comboText.setText(atk.name).setColor(colors[colorIdx]).setAlpha(1).setScale(comboStep >= 4 ? 1.5 : 1.1);
     gameScene.tweens.add({ targets: gameScene.comboText, alpha: 0, duration: 700, ease: 'Power2' });
 
@@ -2270,7 +2275,8 @@ function oneWay(obj, plat) {
     const ledge = plat.getData && plat.getData('ledge');
     if (ledge && obj === player) {
         // Hold down to keep falling through ledges. A tap still clears the one underfoot.
-        if (dropHeld() && obj.body.bottom <= plat.body.bottom + 4) {
+        // Down+X is the low slide — stay on the ledge while that cut runs.
+        if (dropHeld() && !player._slide && obj.body.bottom <= plat.body.bottom + 4) {
             player._dropPlat = plat;
             if (obj.body.velocity.y < 80) obj.body.setVelocityY(220);
             return false;
