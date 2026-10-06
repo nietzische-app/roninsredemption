@@ -1397,8 +1397,13 @@ class Enemy {
             s.body.setVelocityX(0);
             if (s.body.velocity.y < 160) s.body.setVelocityY(220);
             this.playAnim('walk');
-            if ((s.body.blocked.down || s.body.touching.down) && !this._dropPlat) {
-                this.dropping = false;
+            const grounded = s.body.blocked.down || s.body.touching.down;
+            if (grounded) {
+                // Ground ends the drop. A mid ledge only holds them if the player is no longer below.
+                if (!this.onLedgePlatform() || player.y < s.y + 70) {
+                    this.dropping = false;
+                    this._dropPlat = null;
+                }
             }
             return true;
         }
