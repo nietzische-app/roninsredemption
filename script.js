@@ -52,6 +52,8 @@ let portalActive = false;
 let portalGfx = null;
 let portalZone = null;
 let totalEnemiesInRoom = 0;
+let reinforceQueue = [];
+let reinforceSide = 0;
 
 // ===================== UPGRADE STATE =====================
 let upgradeActive = false;
@@ -494,12 +496,18 @@ const CASTLE_CROP = { x: 0, y: 115, w: 1023, h: 793 };
 const ROOMS = {
     courtyard: {
         title: 'Dış Avlu',
-        line: 'Avlu düz değil. Sol duvar, sağ set, sonra kapı. Okçular çatıda bekliyor.',
+        line: 'Yukarı çıktıkça nöbet artar. Ölenin yerine kenardan biri girer. Kapı, hepsi bitince açılır.',
         bg: 'bg_castle', crop: CASTLE_CROP, layout: 'castle',
         spawn: { x: 530, y: 620 },
         portal: { x: 620, y: 508, w: 60, h: 34 },
         next: 'garden',
-        foes: [['fighter', 250, 560], ['commander', 720, 630], ['shinobi', 820, 555], ['sarcher', 400, 440], ['sarcher', 960, 425]]
+        foes: [
+            ['commander', 480, 630],
+            ['fighter', 250, 560], ['shinobi', 820, 555],
+            ['sarcher', 400, 440], ['sarcher', 960, 425],
+            ['fighter', 280, 310], ['sarcher', 1040, 330], ['shinobi', 440, 225]
+        ],
+        reserves: ['fighter', 'shinobi', 'sarcher', 'sarcher']
     },
     garden: {
         title: 'Yılan Bahçesi',
@@ -508,7 +516,8 @@ const ROOMS = {
         spawn: { x: 530, y: 620 },
         portal: { x: 620, y: 508, w: 60, h: 34 },
         next: 'crypt',
-        foes: [['gorgon1', 380, 630], ['gorgon2', 860, 630], ['gorgon3', 980, 630]]
+        foes: [['gorgon1', 360, 630], ['gorgon2', 900, 630], ['gorgon3', 400, 440], ['gorgon1', 960, 425]],
+        reserves: ['gorgon2', 'gorgon3']
     },
     crypt: {
         title: 'Kemik Mahzeni',
@@ -517,7 +526,12 @@ const ROOMS = {
         spawn: { x: 210, y: 580 },
         portal: { x: 1160, y: 592, w: 70, h: 46 },
         next: 'ridge',
-        foes: [['skelwar', 540, 590], ['skelspear', 760, 590], ['skelarch', 237, 428], ['skelarch', 1046, 428]]
+        foes: [
+            ['skelwar', 420, 590], ['skelspear', 760, 590],
+            ['skelarch', 237, 428], ['skelarch', 1046, 428],
+            ['skelwar', 416, 268], ['skelarch', 890, 268]
+        ],
+        reserves: ['skelwar', 'skelspear', 'skelarch']
     },
     ridge: {
         title: 'Yabani Sırt',
@@ -526,7 +540,11 @@ const ROOMS = {
         spawn: { x: 530, y: 620 },
         portal: { x: 620, y: 508, w: 60, h: 34 },
         next: 'tower',
-        foes: [['satyr1', 360, 630], ['satyr2', 720, 630], ['satyr3', 960, 425]]
+        foes: [
+            ['satyr1', 480, 630], ['satyr2', 820, 555],
+            ['satyr3', 960, 425], ['satyr1', 280, 310], ['satyr2', 440, 225]
+        ],
+        reserves: ['satyr3', 'satyr1', 'satyr2']
     },
     tower: {
         title: 'Büyü Kulesi',
@@ -535,7 +553,12 @@ const ROOMS = {
         spawn: { x: 210, y: 580 },
         portal: { x: 1160, y: 592, w: 70, h: 46 },
         next: 'night',
-        foes: [['wanderer', 680, 590], ['fire', 237, 428], ['light', 1046, 428]]
+        foes: [
+            ['wanderer', 700, 590],
+            ['fire', 237, 428], ['light', 1046, 428],
+            ['fire', 416, 268], ['light', 890, 268]
+        ],
+        reserves: ['wanderer', 'fire', 'light']
     },
     night: {
         title: 'Gece İç Avlu',
@@ -544,7 +567,12 @@ const ROOMS = {
         spawn: { x: 530, y: 620 },
         portal: { x: 620, y: 508, w: 60, h: 34 },
         next: 'throne',
-        foes: [['kunoichi', 400, 440], ['kunoichi', 960, 425], ['vgirl', 360, 630], ['converted', 720, 630]]
+        foes: [
+            ['vgirl', 480, 630], ['converted', 820, 555],
+            ['kunoichi', 400, 440], ['kunoichi', 960, 425],
+            ['kunoichi', 280, 310], ['vgirl', 1040, 330]
+        ],
+        reserves: ['kunoichi', 'vgirl', 'converted']
     },
     throne: {
         title: 'Taht',
@@ -552,7 +580,8 @@ const ROOMS = {
         bg: 'bg_boss', tint: 0xff8866, layout: 'hall',
         spawn: { x: 240, y: 580 },
         final: true,
-        foes: [['countess', 680, 590]]
+        foes: [['countess', 680, 590]],
+        reserves: ['vgirl', 'converted']
     }
 };
 
@@ -676,6 +705,8 @@ function clearRoom() {
     if (portalZone) { if (portalZone.destroy) portalZone.destroy(); portalZone = null; }
     portalActive = false;
     boss = null;
+    reinforceQueue = [];
+    reinforceSide = 0;
 }
 
 function layCastle(scene) {
@@ -688,6 +719,10 @@ function layCastle(scene) {
     makeVisiblePlatform(scene, 620, 525 + 4, 130, 8, 'stone');
     makeVisiblePlatform(scene, 820, 580 + 4, 120, 8, 'stone');
     makeVisiblePlatform(scene, 960, 450 + 4, 150, 8, 'wood');
+    // A storey above the roofs, then one perch on the pagoda. Each is a running jump up.
+    makeVisiblePlatform(scene, 280, 340 + 4, 130, 8, 'wood');
+    makeVisiblePlatform(scene, 1040, 360 + 4, 200, 8, 'wood');
+    makeVisiblePlatform(scene, 440, 255 + 4, 170, 8, 'stone');
 }
 
 function layHall(scene) {
@@ -698,6 +733,9 @@ function layHall(scene) {
     makeVisiblePlatform(scene, 604, 454 + 3, 200, 6, 'stone');
     makeVisiblePlatform(scene, 416, 292 + 3, 120, 6, 'wood');
     makeVisiblePlatform(scene, 890, 292 + 3, 120, 6, 'wood');
+    // Steps under the galleries, so the climb keeps going up and a body can stand there.
+    makeVisiblePlatform(scene, 180, 540 + 3, 100, 6, 'wood');
+    makeVisiblePlatform(scene, 1120, 530 + 3, 100, 6, 'wood');
 }
 
 function buildRoom(scene, roomName) {
@@ -714,14 +752,10 @@ function buildRoom(scene, roomName) {
     makeInvisibleWall(scene, 8, 360, 16, 720);
     makeInvisibleWall(scene, 1272, 360, 16, 720);
 
-    room.foes.forEach(([id, x, y]) => {
-        const e = new SheetEnemy(scene, x, y, id);
-        enemies.push(e);
-        if (e.config.boss) boss = e;
-        scene.physics.add.collider(e.sprite, platforms, null, oneWay);
-        scene.physics.add.collider(e.sprite, walls);
-    });
-    totalEnemiesInRoom = enemies.length;
+    room.foes.forEach(([id, x, y]) => spawnFoe(scene, id, x, y));
+    reinforceQueue = (room.reserves || []).slice();
+    reinforceSide = 0;
+    totalEnemiesInRoom = enemies.length + reinforceQueue.length;
 
     if (boss) {
         bossNameText = scene.add.text(W / 2, 50, 'KONTES', {
@@ -748,10 +782,32 @@ function buildRoom(scene, roomName) {
 // ============================================================
 //  MYSTIC PORTAL — Opens when all enemies are dead
 // ============================================================
+function spawnFoe(scene, id, x, y) {
+    const e = new SheetEnemy(scene, x, y, id);
+    enemies.push(e);
+    if (e.config.boss) boss = e;
+    scene.physics.add.collider(e.sprite, platforms, null, oneWay);
+    scene.physics.add.collider(e.sprite, walls);
+    return e;
+}
+
+// Replacements walk in from the wings until the room's reserve is spent.
+function sendReinforcement() {
+    if (!reinforceQueue.length || !gameScene) return null;
+    const id = reinforceQueue.shift();
+    const fromLeft = (reinforceSide++ % 2) === 0;
+    const room = ROOMS[currentRoom];
+    const hall = room && room.layout === 'hall';
+    const e = spawnFoe(gameScene, id, fromLeft ? 90 : 1190, hall ? 590 : 628);
+    e.entering = fromLeft ? 1 : -1;
+    return e;
+}
+
 function checkAllEnemiesDead() {
-    if (portalActive || transitioning || storyActive) return;
+    if (portalActive || transitioning || storyActive || upgradeActive) return;
+    if (reinforceQueue.length) sendReinforcement();
     const aliveCount = enemies.filter(e => !e.dead).length;
-    if (aliveCount === 0 && enemies.length > 0) {
+    if (aliveCount === 0 && !reinforceQueue.length && enemies.length > 0) {
         const room = ROOMS[currentRoom];
         if (room && room.final) showEnding();
         else openMysticPortal();
@@ -1370,6 +1426,16 @@ class SheetEnemy extends Enemy {
     }
 
     updateAI(delta) {
+        if (this.entering) {
+            const s = this.sprite;
+            const cfg = this.config;
+            s.body.setVelocityX(this.entering * cfg.speed);
+            this.state = 'chase';
+            this.playAnim('walk');
+            const dist = Math.hypot(player.x - s.x, player.y - s.y);
+            if (dist < cfg.chaseRange) this.entering = 0;
+            return;
+        }
         if (this.config.kind === 'melee') this.updateMelee(delta);
         else this.updateRanged(delta);
     }
@@ -1601,7 +1667,7 @@ function drawPlayerHP() {
     if (hpText) hpText.setText(Math.ceil(playerHP));
     // Kill count
     if (killCountText) {
-        const alive = enemies.filter(e => !e.dead).length;
+        const alive = enemies.filter(e => !e.dead).length + reinforceQueue.length;
         const place = ROOMS[currentRoom] ? ROOMS[currentRoom].title : '';
         killCountText.setText(place + '   ' + alive + '/' + totalEnemiesInRoom);
     }
