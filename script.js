@@ -1,6 +1,6 @@
 // ============================================================
-//  RONIN'S REDEMPTION — v8
-//  The player is the itch.io samurai. Feet are locked to one pixel on every sheet.
+//  RONIN'S REDEMPTION — v9
+//  The player is the itch.io samurai. The court is the cast from hazır assetler.zip.
 // ============================================================
 
 const W = 1280, H = 720;
@@ -55,6 +55,8 @@ let totalEnemiesInRoom = 0;
 
 // ===================== UPGRADE STATE =====================
 let upgradeActive = false;
+let storyActive = false;
+let storyObjects = [];
 let upgradeObjects = [];
 let upgradesPicked = 0;
 let katanaDmgBonus = 0;
@@ -462,22 +464,117 @@ function createTouchControls(scene) {
 }
 
 // ============================================================
+//  THE BROKEN OATH — one cast, seven gates
+//  Frames are 128px. The foot sits on the last pixel row.
+// ============================================================
+const CAST = {
+    fighter:    { label: 'YUMRUKÇU', color: '#e07040', ox: 62, head: 46, hp: 100, speed: 150, range: 64,  dmg: 14, kind: 'melee',  frames: { idle: 6, walk: 8,  attack: 4,  dead: 3 } },
+    shinobi:    { label: 'SHINOBI',  color: '#88aacc', ox: 66, head: 49, hp: 75,  speed: 210, range: 62,  dmg: 16, kind: 'melee',  frames: { idle: 6, walk: 8,  attack: 5,  dead: 4 } },
+    commander:  { label: 'KOMUTAN',  color: '#d8c49a', ox: 63, head: 34, hp: 190, speed: 90,  range: 70,  dmg: 20, kind: 'melee',  frames: { idle: 5, walk: 9, attack: 4, dead: 6 } },
+    sarcher:    { label: 'OKÇU',     color: '#c4a060', ox: 66, head: 14, hp: 70,  speed: 120, range: 280, dmg: 10, kind: 'archer', proj: 'sarcher_arrow', handX: 104, handY: 62, frames: { idle: 9, walk: 8, attack: 14, dead: 5 } },
+    gorgon1:    { label: 'YILAN',    color: '#66cc66', ox: 50, head: 48, hp: 140, speed: 110, range: 96,  dmg: 16, kind: 'melee',  frames: { idle: 7, walk: 13, attack: 7, dead: 3 } },
+    gorgon2:    { label: 'YILAN',    color: '#88dd66', ox: 62, head: 48, hp: 140, speed: 110, range: 96,  dmg: 16, kind: 'melee',  frames: { idle: 7, walk: 13, attack: 7, dead: 3 } },
+    gorgon3:    { label: 'YILAN',    color: '#44aa66', ox: 54, head: 48, hp: 150, speed: 100, range: 96,  dmg: 18, kind: 'melee',  frames: { idle: 7, walk: 13, attack: 7, dead: 3 } },
+    skelwar:    { label: 'KEMİK',    color: '#ddddcc', ox: 55, head: 68, hp: 90,  speed: 120, range: 66,  dmg: 14, kind: 'melee',  frames: { idle: 7, walk: 7,  attack: 5,  dead: 4 } },
+    skelspear:  { label: 'MIZRAK',   color: '#ccccbb', ox: 58, head: 44, hp: 110, speed: 130, range: 84,  dmg: 16, kind: 'melee',  frames: { idle: 7, walk: 7,  attack: 4,  dead: 5 } },
+    skelarch:   { label: 'KEMİK OK', color: '#bbbb99', ox: 62, head: 50, hp: 70,  speed: 110, range: 300, dmg: 10, kind: 'archer', proj: 'skelarch_arrow', handX: 100, handY: 86, frames: { idle: 7, walk: 8, attack: 15, dead: 5 } },
+    satyr1:     { label: 'SATİR',    color: '#c4884a', ox: 61, head: 52, hp: 120, speed: 160, range: 66,  dmg: 15, kind: 'melee',  frames: { idle: 7, walk: 12, attack: 4, dead: 4 } },
+    satyr2:     { label: 'SATİR',    color: '#d49858', ox: 61, head: 38, hp: 130, speed: 150, range: 70,  dmg: 16, kind: 'melee',  frames: { idle: 7, walk: 12, attack: 8, dead: 4 } },
+    satyr3:     { label: 'SATİR',    color: '#b07040', ox: 64, head: 50, hp: 110, speed: 170, range: 66,  dmg: 14, kind: 'melee',  frames: { idle: 6, walk: 12, attack: 9, dead: 4 } },
+    fire:       { label: 'ATEŞ',     color: '#ff6633', ox: 51, head: 58, hp: 80,  speed: 100, range: 270, dmg: 12, kind: 'mage', bolt: 'fire', handX: 92, handY: 88, frames: { idle: 7, walk: 6, attack: 4, dead: 6 } },
+    light:      { label: 'ŞİMŞEK',   color: '#88ccff', ox: 55, head: 60, hp: 80,  speed: 110, range: 290, dmg: 12, kind: 'mage', bolt: 'lightning', handX: 92, handY: 90, frames: { idle: 7, walk: 7, attack: 10, dead: 5 } },
+    wanderer:   { label: 'GEZGİN',   color: '#ccaaee', ox: 63, head: 58, hp: 100, speed: 125, range: 72,  dmg: 16, kind: 'melee',  frames: { idle: 8, walk: 7,  attack: 7,  dead: 4 } },
+    kunoichi:   { label: 'KUNOICHI', color: '#cc6688', ox: 62, head: 60, hp: 80,  speed: 200, range: 62,  dmg: 15, kind: 'melee',  frames: { idle: 9, walk: 8,  attack: 6,  dead: 5 } },
+    vgirl:      { label: 'VAMPİR',   color: '#cc4466', ox: 65, head: 54, hp: 100, speed: 160, range: 64,  dmg: 16, kind: 'melee',  frames: { idle: 5, walk: 6,  attack: 5,  dead: 10 } },
+    converted:  { label: 'DÖNMÜŞ',   color: '#aa6688', ox: 64, head: 48, hp: 150, speed: 130, range: 68,  dmg: 18, kind: 'melee',  frames: { idle: 5, walk: 8,  attack: 5,  dead: 8 } },
+    countess:   { label: 'KONTES',   color: '#ff4466', ox: 64, head: 52, hp: 560, speed: 100, range: 78,  dmg: 22, kind: 'melee', boss: true, tall: 192, frames: { idle: 5, walk: 6, attack: 6, dead: 8 } }
+};
+
+const CASTLE_CROP = { x: 0, y: 115, w: 1023, h: 793 };
+const ROOMS = {
+    courtyard: {
+        title: 'Dış Avlu',
+        line: 'İsimlerini satmışlar avluyu tutuyor. Yumrukçu, shinobi, çalıntı zırhlı komutan ve çatıdaki okçular.',
+        bg: 'bg_castle', crop: CASTLE_CROP, layout: 'castle',
+        spawn: { x: 190, y: 600 },
+        portal: { x: 640, y: 520, w: 58, h: 42 },
+        next: 'garden',
+        foes: [['fighter', 520, 620], ['commander', 780, 600], ['shinobi', 310, 480], ['sarcher', 340, 380], ['sarcher', 940, 380]]
+    },
+    garden: {
+        title: 'Yılan Bahçesi',
+        line: 'Bahçenin suyu zehir. Saçları yılan, kuyrukları kırbaç.',
+        bg: 'bg_castle', crop: CASTLE_CROP, tint: 0x6ea86a, layout: 'castle',
+        spawn: { x: 190, y: 600 },
+        portal: { x: 640, y: 520, w: 58, h: 42 },
+        next: 'crypt',
+        foes: [['gorgon1', 460, 620], ['gorgon2', 720, 540], ['gorgon3', 980, 480]]
+    },
+    crypt: {
+        title: 'Kemik Mahzeni',
+        line: 'Mezarlar boşalmış. Ok, mızrak ve kılıç, hepsi kemikten.',
+        bg: 'bg_boss', tint: 0x99aacc, layout: 'hall',
+        spawn: { x: 180, y: 560 },
+        portal: { x: 1100, y: 575, w: 70, h: 50 },
+        next: 'ridge',
+        foes: [['skelwar', 520, 560], ['skelspear', 780, 560], ['skelarch', 300, 390], ['skelarch', 980, 390]]
+    },
+    ridge: {
+        title: 'Yabani Sırt',
+        line: 'Surun dışında satirler nöbet tutuyor. İnsan yüzü, keçi ayağı.',
+        bg: 'bg_castle', crop: CASTLE_CROP, tint: 0xc4a060, layout: 'castle',
+        spawn: { x: 190, y: 600 },
+        portal: { x: 640, y: 520, w: 58, h: 42 },
+        next: 'tower',
+        foes: [['satyr1', 480, 620], ['satyr2', 780, 540], ['satyr3', 300, 480]]
+    },
+    tower: {
+        title: 'Büyü Kulesi',
+        line: 'Kulenin büyücüleri ateşi ve şimşeği yola germiş.',
+        bg: 'bg_boss', tint: 0xcc99ee, layout: 'hall',
+        spawn: { x: 180, y: 560 },
+        portal: { x: 1100, y: 575, w: 70, h: 50 },
+        next: 'night',
+        foes: [['fire', 340, 390], ['light', 960, 390], ['wanderer', 640, 540]]
+    },
+    night: {
+        title: 'Gece İç Avlu',
+        line: 'Kunoichi ve vampirler nöbette. Kan burada bir yemin gibi duruyor.',
+        bg: 'bg_castle', crop: CASTLE_CROP, tint: 0x6677aa, layout: 'castle',
+        spawn: { x: 190, y: 600 },
+        portal: { x: 640, y: 520, w: 58, h: 42 },
+        next: 'throne',
+        foes: [['kunoichi', 340, 480], ['kunoichi', 960, 480], ['vgirl', 560, 620], ['converted', 900, 600]]
+    },
+    throne: {
+        title: 'Taht',
+        line: 'Kontes tahtta. Lanetin kalbi o. Yemin burada kapanır.',
+        bg: 'bg_boss', tint: 0xff8866, layout: 'hall',
+        spawn: { x: 220, y: 560 },
+        final: true,
+        foes: [['countess', 900, 540]]
+    }
+};
+
+// ============================================================
 //  PRELOAD
 // ============================================================
 function preload() {
     this.load.image('bg_castle', 'background.jpg');
     this.load.image('bg_boss', 'background_boss.png');
-    const frame = { frameWidth: BIT_W, frameHeight: BIT_H };
     const sam = { frameWidth: SAM_W, frameHeight: SAM_H };
+    const cell = { frameWidth: 128, frameHeight: 128 };
     this.load.spritesheet('samurai_idle', 'samurai_idle.png?v=45', sam);
     this.load.spritesheet('samurai_walk', 'samurai_walk.png?v=45', sam);
     this.load.spritesheet('samurai_atk', 'samurai_atk.png?v=45', sam);
     this.load.spritesheet('samurai_dash', 'samurai_dash.png?v=45', sam);
-    this.load.spritesheet('oni', 'oni_sheet.png?v=45', frame);
-    this.load.spritesheet('archer', 'archer_green.png?v=46', { frameWidth: 64, frameHeight: 64 });
-    this.load.image('arrow', 'arrow.png?v=46');
-    this.load.spritesheet('shield', 'shield_sheet.png?v=45', frame);
-    this.load.spritesheet('assassin', 'assassin_sheet.png?v=45', frame);
+    Object.keys(CAST).forEach((id) => {
+        const def = CAST[id];
+        Object.keys(def.frames).forEach((anim) => {
+            this.load.spritesheet(id + '_' + anim, 'art/cast/' + id + '_' + anim + '.png?v=48', cell);
+        });
+        if (def.proj) this.load.image(def.proj, 'art/cast/' + def.proj + '.png?v=48');
+    });
 }
 
 // ============================================================
@@ -486,11 +583,7 @@ function preload() {
 function create() {
     gameScene = this;
 
-    EnemyOni.dims = BIT_DIMS;
-    EnemyArcher.dims = { fw: 64, fh: 64, originX: 26 / 64, originY: 1, bodyW: 14, bodyH: 28, headTop: 16 };
-    EnemyShield.dims = BIT_DIMS;
-    EnemyAssassin.dims = BIT_DIMS;
-    BossOni.dims = BIT_DIMS;
+    makeSpellBolts(this);
 
     // Feet sit on the texture origin, so flips and landings stay put.
     // Body is centered on that origin, so facing left does not shift the hitbox.
@@ -535,7 +628,8 @@ function create() {
         if (!audioCtx) initAudio(); startBGM();
         // A tap on open ground still swings. Pads handle their own actions.
         if (hitTouchPad(pointer.x, pointer.y)) return;
-        if (pointer.leftButtonDown() && !playerDead && !upgradeActive && !transitioning) {
+        if (storyActive) { dismissStory(); return; }
+        if (pointer.leftButtonDown() && !playerDead && !upgradeActive && !transitioning && !storyActive) {
             const body = player.body;
             const onGround = body.blocked.down || body.touching.down;
             const mL = keys.A.isDown || cursors.left.isDown || touch.left;
@@ -549,8 +643,10 @@ function create() {
     initAudio();
     this.input.keyboard.on('keydown', () => { startBGM(); });
 
-    // --- BUILD MAIN ROOM ---
-    buildRoom(this, 'main');
+    // --- THE FIRST GATE ---
+    storyActive = true;
+    buildRoom(this, 'courtyard');
+    showOpening(this);
 }
 
 // ============================================================
@@ -567,6 +663,10 @@ function clearRoom() {
     projectiles = [];
     roomObjects.forEach(obj => { if (obj && obj.scene) obj.destroy(); });
     roomObjects = [];
+    if (gameScene && gameScene._roomHits) {
+        gameScene._roomHits.forEach(c => c.destroy());
+        gameScene._roomHits = [];
+    }
     if (platforms) platforms.clear(true, true);
     if (walls) walls.clear(true, true);
     if (bossHpGfx) { bossHpGfx.destroy(); bossHpGfx = null; }
@@ -578,79 +678,57 @@ function clearRoom() {
     boss = null;
 }
 
+function layCastle(scene) {
+    const groundTop = 652;
+    makeVisiblePlatform(scene, 640, groundTop + 14, 1400, 28, 'ground');
+    makeVisiblePlatform(scene, 640, 624 + 6, 210, 12, 'stone');
+    makeVisiblePlatform(scene, 640, 592 + 6, 168, 12, 'stone');
+    makeVisiblePlatform(scene, 640, 560 + 6, 132, 12, 'stone');
+    makeVisiblePlatform(scene, 640, 528 + 6, 104, 12, 'stone');
+    makeVisiblePlatform(scene, 310, 516 + 6, 150, 12, 'wood');
+    makeVisiblePlatform(scene, 970, 516 + 6, 150, 12, 'wood');
+    makeVisiblePlatform(scene, 340, 412 + 6, 180, 12, 'wood');
+    makeVisiblePlatform(scene, 940, 412 + 6, 180, 12, 'wood');
+}
+
+function layHall(scene) {
+    const groundTop = 600;
+    makeVisiblePlatform(scene, 640, groundTop + 16, 1400, 32, 'ground');
+    makeVisiblePlatform(scene, 230, 514 + 6, 150, 12, 'wood');
+    makeVisiblePlatform(scene, 1050, 514 + 6, 150, 12, 'wood');
+    makeVisiblePlatform(scene, 300, 424 + 6, 230, 12, 'balcony');
+    makeVisiblePlatform(scene, 980, 424 + 6, 230, 12, 'balcony');
+    makeVisiblePlatform(scene, 640, 458 + 6, 170, 12, 'stone');
+    makeVisiblePlatform(scene, 430, 300 + 6, 130, 12, 'stone');
+    makeVisiblePlatform(scene, 850, 300 + 6, 130, 12, 'stone');
+}
+
 function buildRoom(scene, roomName) {
+    const room = ROOMS[roomName] || ROOMS.courtyard;
     currentRoom = roomName;
     platforms = scene.physics.add.staticGroup();
     walls = scene.physics.add.staticGroup();
 
-    if (roomName === 'main') {
-        // Castle art is 4:3 with black bars. Fit it, don't stretch it.
-        // Crop source y 115-908 removes the letterbox baked into the jpg.
-        addFittedBackdrop(scene, 'bg_castle', { x: 0, y: 115, w: 1023, h: 793 });
-        drawFog(scene);
+    const backdrop = addFittedBackdrop(scene, room.bg, room.crop || null);
+    if (room.tint && backdrop) backdrop.setTint(room.tint);
+    drawFog(scene);
+    if (room.layout === 'hall') layHall(scene);
+    else layCastle(scene);
+    makeInvisibleWall(scene, 8, 360, 16, 720);
+    makeInvisibleWall(scene, 1272, 360, 16, 720);
 
-        // Walk lines sit on the painted courtyard, the stair, and the side roofs.
-        // y values below are the TOP of each ledge. Centers are top + thickness/2.
-        const groundTop = 652;
-        makeVisiblePlatform(scene, 640, groundTop + 14, 1400, 28, 'ground');
+    room.foes.forEach(([id, x, y]) => {
+        const e = new SheetEnemy(scene, x, y, id);
+        enemies.push(e);
+        if (e.config.boss) boss = e;
+        scene.physics.add.collider(e.sprite, platforms, null, oneWay);
+        scene.physics.add.collider(e.sprite, walls);
+    });
+    totalEnemiesInRoom = enemies.length;
 
-        // Center stairs, wide at the courtyard, narrow at the door.
-        makeVisiblePlatform(scene, 640, 624 + 6, 210, 12, 'stone');
-        makeVisiblePlatform(scene, 640, 592 + 6, 168, 12, 'stone');
-        makeVisiblePlatform(scene, 640, 560 + 6, 132, 12, 'stone');
-        makeVisiblePlatform(scene, 640, 528 + 6, 104, 12, 'stone');
-
-        // Side roofs. A lower perch makes the upper roof a single jump away.
-        makeVisiblePlatform(scene, 310, 516 + 6, 150, 12, 'wood');
-        makeVisiblePlatform(scene, 970, 516 + 6, 150, 12, 'wood');
-        makeVisiblePlatform(scene, 340, 412 + 6, 180, 12, 'wood');
-        makeVisiblePlatform(scene, 940, 412 + 6, 180, 12, 'wood');
-
-        makeInvisibleWall(scene, 8, 360, 16, 720);
-        makeInvisibleWall(scene, 1272, 360, 16, 720);
-
-        totalEnemiesInRoom = 8;
-        const spawnEnemy = (Type, x, y) => {
-            const e = new Type(scene, x, y);
-            enemies.push(e);
-            scene.physics.add.collider(e.sprite, platforms, null, oneWay);
-            scene.physics.add.collider(e.sprite, walls);
-        };
-        spawnEnemy(EnemyShield, 560, 620);
-        spawnEnemy(EnemyOni, 980, 620);
-        spawnEnemy(EnemyAssassin, 640, 590);
-        spawnEnemy(EnemyAssassin, 310, 490);
-        spawnEnemy(EnemyOni, 970, 490);
-        spawnEnemy(EnemyArcher, 340, 390);
-        spawnEnemy(EnemyArcher, 940, 390);
-        spawnEnemy(EnemyOni, 700, 530);
-
-    } else if (roomName === 'boss') {
-        addFittedBackdrop(scene, 'bg_boss', null);
-        drawFog(scene);
-
-        // Ledges follow the painted balconies, the broken bridge, and the floor.
-        const groundTop = 600;
-        makeVisiblePlatform(scene, 640, groundTop + 16, 1400, 32, 'ground');
-        makeVisiblePlatform(scene, 230, 514 + 6, 150, 12, 'wood');
-        makeVisiblePlatform(scene, 1050, 514 + 6, 150, 12, 'wood');
-        makeVisiblePlatform(scene, 300, 424 + 6, 230, 12, 'balcony');
-        makeVisiblePlatform(scene, 980, 424 + 6, 230, 12, 'balcony');
-        makeVisiblePlatform(scene, 640, 458 + 6, 170, 12, 'stone');
-        makeVisiblePlatform(scene, 430, 300 + 6, 130, 12, 'stone');
-        makeVisiblePlatform(scene, 850, 300 + 6, 130, 12, 'stone');
-        makeInvisibleWall(scene, 8, 360, 16, 720);
-        makeInvisibleWall(scene, 1272, 360, 16, 720);
-
-        boss = new BossOni(scene, 900, 560);
-        enemies.push(boss);
-        scene.physics.add.collider(boss.sprite, platforms, null, oneWay);
-        scene.physics.add.collider(boss.sprite, walls);
-        totalEnemiesInRoom = 1;
-
-        // Boss HUD
-        bossNameText = scene.add.text(W / 2, 50, '⛩ THE GREAT ONI ⛩', {
-            fontFamily: 'Georgia, serif', fontSize: '13px', color: '#ff4444', fontStyle: 'bold'
+    if (boss) {
+        bossNameText = scene.add.text(W / 2, 50, 'KONTES', {
+            fontFamily: 'Georgia, serif', fontSize: '13px', color: '#ff4466', fontStyle: 'bold'
         }).setOrigin(0.5).setDepth(102).setScrollFactor(0);
         bossHpGfx = scene.add.graphics().setDepth(101).setScrollFactor(0);
         bossHpText = scene.add.text(W / 2, 69, '', {
@@ -658,24 +736,28 @@ function buildRoom(scene, roomName) {
         }).setOrigin(0.5).setDepth(102).setScrollFactor(0);
     }
 
-    // Colliders
-    scene.physics.add.collider(player, platforms, onLand, oneWay);
-    scene.physics.add.collider(player, walls);
+    if (scene._roomHits) scene._roomHits.forEach(c => c.destroy());
+    scene._roomHits = [
+        scene.physics.add.collider(player, platforms, onLand, oneWay),
+        scene.physics.add.collider(player, walls)
+    ];
 
-    // Camera — no zoom, no bounds restriction
     scene.cameras.main.setZoom(1);
     scene.cameras.main.removeBounds();
     scene.cameras.main.setScroll(0, 0);
+    if (!storyActive) showRoomCard(room);
 }
 
 // ============================================================
 //  MYSTIC PORTAL — Opens when all enemies are dead
 // ============================================================
 function checkAllEnemiesDead() {
-    if (portalActive || transitioning) return;
+    if (portalActive || transitioning || storyActive) return;
     const aliveCount = enemies.filter(e => !e.dead).length;
     if (aliveCount === 0 && enemies.length > 0) {
-        openMysticPortal();
+        const room = ROOMS[currentRoom];
+        if (room && room.final) showEnding();
+        else openMysticPortal();
     }
 }
 
@@ -683,8 +765,9 @@ function openMysticPortal() {
     portalActive = true;
     playPortalSound();
 
-    // Portal sits in the palace doorway, at the top of the stair.
-    const px = 640, py = 490;
+    const room = ROOMS[currentRoom];
+    const gate = room && room.portal ? room.portal : { x: 640, y: 520, w: 58, h: 42 };
+    const px = gate.x, py = gate.y;
 
     portalGfx = gameScene.add.graphics().setDepth(5);
     // Mystical energy circle
@@ -727,21 +810,19 @@ function openMysticPortal() {
     roomObjects.push(innerGlow);
 
     // Label
-    const lbl = gameScene.add.text(px, py - 45, '⛩ PORTAL OPEN ⛩', {
+    const lbl = gameScene.add.text(px, py - 45, 'KAPI AÇIK', {
         fontFamily: 'Georgia, serif', fontSize: '8px', color: '#cc66ff', fontStyle: 'bold'
     }).setOrigin(0.5).setDepth(6);
     gameScene.tweens.add({ targets: lbl, alpha: 0.3, duration: 900, yoyo: true, repeat: -1 });
     roomObjects.push(lbl);
 
-    // Physics zone for portal collision
-    // Feet land on the top step (y ≈ 528). w/h are half-extents.
-    portalZone = { x: 640, y: 520, w: 58, h: 42 };
+    portalZone = { x: px, y: py, w: gate.w, h: gate.h };
 
     // Camera flash
     gameScene.cameras.main.flash(400, 100, 50, 200);
 
     // Announcement
-    const ann = gameScene.add.text(W/2, H/2 - 40, 'ALL ENEMIES SLAIN!', {
+    const ann = gameScene.add.text(W/2, H/2 - 40, 'YOL AÇILDI', {
         fontFamily: 'Georgia, serif', fontSize: '16px', color: '#cc66ff', fontStyle: 'bold',
         stroke: '#220044', strokeThickness: 3
     }).setOrigin(0.5).setDepth(200).setScrollFactor(0).setAlpha(0);
@@ -756,7 +837,9 @@ function transitionToRoom(targetRoom) {
         targets: fade, alpha: 1, duration: 400,
         onComplete: () => {
             clearRoom();
-            player.setPosition(190, 600);
+            const dest = ROOMS[targetRoom];
+            const spawn = dest && dest.spawn ? dest.spawn : { x: 190, y: 600 };
+            player.setPosition(spawn.x, spawn.y);
             player.body.setVelocity(0, 0);
             buildRoom(gameScene, targetRoom);
             gameScene.tweens.add({
@@ -966,6 +1049,7 @@ function addFittedBackdrop(scene, key, crop) {
     scene.textures.addCanvas(tkey, cnv);
     const img = scene.add.image(Math.round((W - dw) / 2) + dw / 2, Math.round((H - dh) / 2) + dh / 2, tkey).setDepth(0);
     roomObjects.push(img);
+    return img;
 }
 
 function drawFog(scene) {
@@ -1030,11 +1114,28 @@ class Enemy {
         this.typeLabel.setPosition(s.x, head - 16);
     }
 
+    showFrame(anim, index) {
+        const s = this.sprite;
+        if (!s || !anim) return;
+        const frame = anim.frames[Math.min(index, anim.frames.length - 1)];
+        const key = anim.key || this.config.sheet;
+        const switched = s.texture.key !== key;
+        if (switched) s.setTexture(key, frame);
+        else if (String(s.frame.name) !== String(frame)) s.setFrame(frame);
+        if (switched) {
+            const dims = this.config.dims;
+            const scale = (this.config.pixelHeight || ENEMY_HEIGHT) / dims.fh;
+            s.setScale(scale).setFlipX(!this.facingRight);
+            applyFeetBody(s, dims, 0.55);
+        }
+    }
+
     playAnim(name) {
         if (this.animName === name) return;
-        this.animName = name; this.animFrame = 0; this.animTimer = 0;
         const anim = this.config.anims[name];
-        if (anim) this.sprite.setFrame(anim.frames[0]);
+        if (!anim) return;
+        this.animName = name; this.animFrame = 0; this.animTimer = 0;
+        this.showFrame(anim, 0);
     }
 
     updateAnim(delta) {
@@ -1042,7 +1143,7 @@ class Enemy {
         if (!anim || !anim.frames.length) return;
         this._wantDy = 0;
         if (anim.frames.length === 1) {
-            this.sprite.setFrame(anim.frames[0]);
+            this.showFrame(anim, 0);
             return;
         }
         const fps = anim.fps;
@@ -1051,7 +1152,7 @@ class Enemy {
             this.animTimer -= 1000 / fps;
             this.animFrame++;
             if (this.animFrame >= anim.frames.length) this.animFrame = anim.loop ? 0 : anim.frames.length - 1;
-            this.sprite.setFrame(anim.frames[this.animFrame]);
+            this.showFrame(anim, this.animFrame);
         }
     }
 
@@ -1105,7 +1206,7 @@ class Enemy {
     checkHitPlayer() {
         if (isDashing || playerHurtTimer > 0 || playerHP <= 0 || playerDead) return;
         const dx = Math.abs(player.x - this.sprite.x), dy = Math.abs(player.y - this.sprite.y);
-        const reach = this.config.attackRange ? Math.min(this.config.attackRange, this instanceof BossOni ? 100 : 62) : 56;
+        const reach = this.config.kind === 'melee' ? Math.min(this.config.attackRange || 64, 110) : 56;
         if (dx < reach && dy < 72) {
             if (isParrying && parryWindow > 0) {
                 triggerParrySuccess(gameScene);
@@ -1199,306 +1300,254 @@ function updatePartySystem() {
 }
 
 // ============================================================
-//  ONI
+//  SHEET FOES — one class, the whole court
 // ============================================================
-class EnemyOni extends Enemy {
-    static dims = { fw: 256, fh: 256 };
-    constructor(scene, x, y) {
-        super(scene, x, y, {
-            sheet: 'oni', label: 'ONI', labelColor: '#cc66ff',
-            hp: 120, pixelHeight: ENEMY_HEIGHT, attackDmg: 18, knockback: 280,
-            speed: 110, chaseRange: 300, attackRange: 55,
-            attackDur: 550, attackCooldown: 1300,
-            bodyWRatio: 0.30, bodyHRatio: 0.50, bodyYOffset: 0.30,
-            dims: EnemyOni.dims,
-            anims: { idle:{frames:[0,1,2,3],fps:5,loop:true}, walk:{frames:[4,5,6,7],fps:8,loop:true}, attack:{frames:[8,9,10,11],fps:10,loop:false}, special:{frames:[12,13,14,15],fps:6,loop:false} }
+class SheetEnemy extends Enemy {
+    constructor(scene, x, y, id) {
+        const def = CAST[id];
+        const dims = {
+            fw: 128, fh: 128,
+            originX: def.ox / 128, originY: 1,
+            bodyW: def.kind === 'melee' && id.startsWith('gorgon') ? 28 : 22,
+            bodyH: 44,
+            headTop: def.head
+        };
+        const anims = {};
+        Object.keys(def.frames).forEach((name) => {
+            const n = def.frames[name];
+            anims[name] = {
+                key: id + '_' + name,
+                frames: Array.from({ length: n }, (_, i) => i),
+                fps: name === 'attack' ? 12 : name === 'walk' ? 10 : 6,
+                loop: name === 'idle' || name === 'walk'
+            };
         });
-    }
-    updateAI(delta) {
-        const s = this.sprite, dx = player.x - s.x, dist = Math.sqrt(dx*dx + (player.y-s.y)**2);
-        if (this.state === 'attack') {
-            this.attackTimer -= delta; this.playAnim('attack');
-            if (this.attackTimer < this.config.attackDur*0.3) { s.setTint(0xff6644); if (this.attackTimer < this.config.attackDur*0.25 && this.attackTimer > this.config.attackDur*0.15) this.checkHitPlayer(); }
-            if (this.attackTimer <= 0) { this.state='idle'; this.attackCd=this.config.attackCooldown; s.clearTint(); this.releaseAttackSlot(); }
-            s.body.setVelocityX(0);
-        } else if (dist > this.config.chaseRange * 1.5) {
-            // Truly out of range — release slot and idle
-            this.state='idle'; this.playAnim('idle'); s.body.setVelocityX(0); this.releaseAttackSlot();
-        } else if (dist < this.config.attackRange && this.attackCd <= 0 && this.isActiveAttacker()) {
-            this.state='attack'; this.attackTimer=this.config.attackDur; s.body.setVelocityX(0);
-        } else if (dist < this.config.chaseRange && this.isActiveAttacker()) {
-            this.state='chase'; this.playAnim('walk'); s.body.setVelocityX((dx>0?1:-1)*this.config.speed);
-        } else {
-            // In range but no slot — stand guard, don't chase
-            this.state='idle'; this.playAnim('idle'); s.body.setVelocityX(0);
-        }
-    }
-}
-
-// ============================================================
-//  ARCHER
-// ============================================================
-class EnemyArcher extends Enemy {
-    static dims = { fw: 64, fh: 64, originX: 26 / 64, originY: 1, bodyW: 14, bodyH: 28, headTop: 16 };
-    constructor(scene, x, y) {
+        const attackFrames = def.frames.attack || 4;
         super(scene, x, y, {
-            sheet: 'archer', label: 'ARCHER', labelColor: '#44cc44',
-            hp: 70, pixelHeight: 128, attackDmg: 10, knockback: 200,
-            speed: 130, chaseRange: 400, attackRange: 250, fleeRange: 100,
-            attackDur: 780, attackCooldown: 1800,
-            dims: EnemyArcher.dims,
-            anims: {
-                idle:  { frames: [0, 1, 2, 3, 4], fps: 6, loop: true },
-                walk:  { frames: [22, 23, 24, 25, 26, 27, 28, 29], fps: 10, loop: true },
-                shoot: { frames: [11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21], fps: 14, loop: false },
-                flee:  { frames: [22, 23, 24, 25, 26, 27, 28, 29], fps: 14, loop: true },
-                death: { frames: [44, 45, 46, 47, 48], fps: 10, loop: false }
-            }
+            sheet: id + '_idle',
+            label: def.label, labelColor: def.color,
+            hp: def.hp, pixelHeight: def.tall || 160,
+            attackDmg: def.dmg, knockback: def.boss ? 340 : 220,
+            speed: def.speed,
+            chaseRange: def.kind === 'melee' ? 340 : 460,
+            attackRange: def.range,
+            fleeRange: def.kind === 'melee' ? 0 : 90,
+            attackDur: Math.round((attackFrames / 12) * 1000),
+            attackCooldown: def.boss ? 1100 : def.kind === 'melee' ? 900 : 1600,
+            dims: dims,
+            anims: anims,
+            kind: def.kind,
+            boss: !!def.boss,
+            proj: def.proj || null,
+            bolt: def.bolt || null,
+            handX: def.handX || 96,
+            handY: def.handY || 72
         });
         this.shootTimer = 0;
-    }
-    updateAI(delta) {
-        const s = this.sprite, dx = player.x - s.x, dist = Math.sqrt(dx*dx + (player.y-s.y)**2);
-        if (this.shootTimer > 0 && dist >= this.config.fleeRange) {
-            this.shootTimer -= delta;
-            this.playAnim('shoot');
-            s.body.setVelocityX(0);
-            return;
-        }
-        if (dist < this.config.fleeRange) {
-            this.shootTimer = 0;
-            this.state='flee'; this.playAnim('flee');
-            s.body.setVelocityX((dx>0?-1:1)*this.config.speed*1.3);
-        } else if (dist > this.config.chaseRange * 1.5) {
-            this.state='idle'; this.playAnim('idle'); s.body.setVelocityX(0); this.releaseAttackSlot();
-        } else if (dist < this.config.attackRange && this.attackCd <= 0 && this.isActiveAttacker()) {
-            this.state='shoot'; this.shootTimer = 780; this.playAnim('shoot'); s.body.setVelocityX(0);
-            this.attackCd=this.config.attackCooldown;
-            gameScene.time.delayedCall(570, () => { if (!this.dead) { this.fireArrow(); this.releaseAttackSlot(); } });
-        } else if (dist < this.config.chaseRange && dist > this.config.attackRange*0.8 && this.isActiveAttacker()) {
-            this.state='chase'; this.playAnim('walk'); s.body.setVelocityX((dx>0?1:-1)*this.config.speed*0.7);
-        } else {
-            this.state='idle'; this.playAnim('idle'); s.body.setVelocityX(0);
-        }
-    }
-    fireArrow() {
-        playArrowSound();
-        const dir = this.facingRight ? 1 : -1;
-        const scale = this.sprite.scaleY;
-        // The release frame draws the shaft on source row 36, leaving the bow near source x 44.
-        const ax = this.sprite.x + dir * (44 - 26) * scale;
-        const ay = this.sprite.y - (64 - 36) * scale;
-        const arrow = gameScene.add.sprite(ax, ay, 'arrow').setScale(scale).setFlipX(dir < 0).setDepth(15);
-        projectiles.push({ gfx: arrow, x: ax, y: ay, vx: dir * 450, vy: 0, life: 2000, dmg: this.config.attackDmg });
-    }
-    die() {
-        if (this.sprite) this.sprite.setFrame(48);
-        super.die();
-    }
-}
-
-// ============================================================
-//  SHIELD
-// ============================================================
-class EnemyShield extends Enemy {
-    static dims = { fw: 256, fh: 256 };
-    constructor(scene, x, y) {
-        super(scene, x, y, {
-            sheet: 'shield', label: 'SHIELD', labelColor: '#ff6644',
-            hp: 200, pixelHeight: ENEMY_HEIGHT, attackDmg: 20, knockback: 350,
-            speed: 55, chaseRange: 250, attackRange: 50,
-            attackDur: 700, attackCooldown: 2000,
-            bodyWRatio: 0.35, bodyHRatio: 0.55, bodyYOffset: 0.28,
-            dims: EnemyShield.dims,
-            anims: { idle:{frames:[0,1,2,3],fps:4,loop:true}, walk:{frames:[4,5,6,7],fps:5,loop:true}, block:{frames:[8,9,10,11],fps:6,loop:false}, stagger:{frames:[12,13,14,15],fps:8,loop:false} }
-        });
-    }
-    canTakeDamage(attackDir) {
-        const pr = player.x > this.sprite.x, f = this.facingRight;
-        if ((f && pr) || (!f && !pr)) { this.showBlock(); return false; }
-        return true;
-    }
-    showBlock() {
-        playBlockSound(); this.playAnim('block');
-        const s = this.sprite;
-        const bt = gameScene.add.text(s.x, s.y-40, 'BLOCKED!', {fontFamily:'monospace',fontSize:'10px',color:'#ff6644',fontStyle:'bold'}).setOrigin(0.5).setDepth(30);
-        gameScene.tweens.add({targets:bt,y:bt.y-20,alpha:0,duration:600,onComplete:()=>bt.destroy()});
-        player.body.setVelocityX((player.x>s.x?1:-1)*200);
-    }
-    updateAI(delta) {
-        const s = this.sprite, dx = player.x-s.x, dist = Math.sqrt(dx*dx+(player.y-s.y)**2);
-        if (this.state === 'attack') {
-            this.attackTimer -= delta; this.playAnim('block');
-            if (this.attackTimer < this.config.attackDur*0.3) { s.setTint(0xff6644); if (this.attackTimer < this.config.attackDur*0.25 && this.attackTimer > this.config.attackDur*0.15) this.checkHitPlayer(); }
-            if (this.attackTimer <= 0) { this.state='idle'; this.attackCd=this.config.attackCooldown; s.clearTint(); this.releaseAttackSlot(); }
-            s.body.setVelocityX(0);
-        } else if (dist > this.config.chaseRange * 1.5) {
-            this.state='idle'; this.playAnim('idle'); s.body.setVelocityX(0); this.releaseAttackSlot();
-        } else if (dist < this.config.attackRange && this.attackCd <= 0 && this.isActiveAttacker()) {
-            this.state='attack'; this.attackTimer=this.config.attackDur; s.body.setVelocityX(0);
-        } else if (dist < this.config.chaseRange && this.isActiveAttacker()) {
-            this.state='chase'; this.playAnim('walk'); s.body.setVelocityX((dx>0?1:-1)*this.config.speed);
-        } else {
-            this.state='idle'; this.playAnim('idle'); s.body.setVelocityX(0);
-        }
-    }
-}
-
-// ============================================================
-//  ASSASSIN
-// ============================================================
-class EnemyAssassin extends Enemy {
-    static dims = { fw: 256, fh: 256 };
-    constructor(scene, x, y) {
-        super(scene, x, y, {
-            sheet: 'assassin', label: 'ASSASSIN', labelColor: '#44ddcc',
-            hp: 80, pixelHeight: ENEMY_HEIGHT, attackDmg: 22, knockback: 200,
-            speed: 220, chaseRange: 350, attackRange: 45,
-            attackDur: 350, attackCooldown: 900,
-            bodyWRatio: 0.26, bodyHRatio: 0.50, bodyYOffset: 0.30,
-            dims: EnemyAssassin.dims,
-            anims: { idle:{frames:[0,1,2,3],fps:6,loop:true}, run:{frames:[4,5,6,7],fps:12,loop:true}, attack:{frames:[8,9,10,11],fps:14,loop:false}, vanish:{frames:[12,13,14,15],fps:6,loop:true} }
-        });
-        this.invisTimer = 0; this.isInvisible = false;
-    }
-    updateAI(delta) {
-        const s = this.sprite, dx = player.x-s.x, dist = Math.sqrt(dx*dx+(player.y-s.y)**2);
-        if (this.hp < this.maxHp*0.5 && !this.isInvisible && this.invisTimer <= 0) {
-            this.isInvisible = true; this.invisTimer = 3000; this.playAnim('vanish'); s.setAlpha(0.1);
-            this.typeLabel.setAlpha(0); this.hpGfx.setAlpha(0);
-        }
-        if (this.isInvisible) { this.invisTimer -= delta; if (this.invisTimer <= 0) { this.isInvisible = false; s.setAlpha(1); this.typeLabel.setAlpha(0.8); this.hpGfx.setAlpha(1); } }
-        if (this.state === 'attack') {
-            this.attackTimer -= delta; this.playAnim('attack');
-            if (this.attackTimer < this.config.attackDur*0.35) { s.setTint(0x44ddcc); if (this.attackTimer < this.config.attackDur*0.3 && this.attackTimer > this.config.attackDur*0.15) this.checkHitPlayer(); }
-            if (this.attackTimer <= 0) { this.state='idle'; this.attackCd=this.config.attackCooldown; s.clearTint(); this.releaseAttackSlot(); }
-            s.body.setVelocityX(0);
-        } else if (dist > this.config.chaseRange * 1.5) {
-            this.state='idle'; this.playAnim(this.isInvisible?'vanish':'idle'); s.body.setVelocityX(0); this.releaseAttackSlot();
-        } else if (dist < this.config.attackRange && this.attackCd <= 0 && !this.isInvisible && this.isActiveAttacker()) {
-            this.state='attack'; this.attackTimer=this.config.attackDur; s.body.setVelocityX(0);
-        } else if (dist < this.config.chaseRange && this.isActiveAttacker()) {
-            this.state='chase'; this.playAnim(this.isInvisible?'vanish':'run'); s.body.setVelocityX((dx>0?1:-1)*this.config.speed);
-        } else {
-            this.state='idle'; this.playAnim(this.isInvisible?'vanish':'idle'); s.body.setVelocityX(0);
-        }
-    }
-}
-
-// ============================================================
-//  BOSS ONI
-// ============================================================
-class BossOni extends Enemy {
-    static dims = { fw: 256, fh: 256 };
-    constructor(scene, x, y) {
-        super(scene, x, y, {
-            sheet: 'oni', label: '', labelColor: '#ff2222',
-            hp: 600, pixelHeight: BOSS_HEIGHT, attackDmg: 25, knockback: 400,
-            speed: 80, chaseRange: 600, attackRange: 80,
-            attackDur: 600, attackCooldown: 1500,
-            bodyWRatio: 0.30, bodyHRatio: 0.50, bodyYOffset: 0.30,
-            dims: BossOni.dims,
-            anims: { idle:{frames:[0,1,2,3],fps:4,loop:true}, walk:{frames:[4,5,6,7],fps:6,loop:true}, attack:{frames:[8,9,10,11],fps:10,loop:false}, special:{frames:[12,13,14,15],fps:8,loop:false} }
-        });
-        this.specialTimer = 4000;
-        this.isDashing = false;
-        this.dashTimer = 0;
-        this.isSlamming = false;
-        this.slamTimer = 0;
-        this.typeLabel.setAlpha(0);
-        this.spawned70 = false;
-        this.spawned30 = false;
+        this._fired = false;
     }
 
     drawHP() {
-        this.hpGfx.clear();
-        if (bossHpGfx) {
-            bossHpGfx.clear();
-            const bx = (W/2) - 120, by = 58, bw = 240, bh = 10;
-            const ratio = Math.max(0, this.hp / this.maxHp);
-            const fillW = Math.floor((bw - 4) * ratio);
-            bossHpGfx.fillStyle(0x1a0000, 0.9); bossHpGfx.fillRoundedRect(bx, by, bw, bh, 5);
-            bossHpGfx.lineStyle(1, 0xff2222, 0.6); bossHpGfx.strokeRoundedRect(bx, by, bw, bh, 5);
-            if (fillW > 0) {
-                let color = ratio > 0.5 ? 0xcc2222 : ratio > 0.25 ? 0xff4400 : 0xff0000;
-                bossHpGfx.fillStyle(color, 0.9); bossHpGfx.fillRoundedRect(bx + 2, by + 2, fillW, bh - 4, 3);
-            }
-            if (bossHpText) bossHpText.setText(Math.ceil(this.hp) + ' / ' + this.maxHp);
-        }
+        super.drawHP();
+        if (!this.config.boss || !bossHpGfx) return;
+        bossHpGfx.clear();
+        const bx = (W / 2) - 120, by = 58, bw = 240, bh = 10;
+        const ratio = Math.max(0, this.hp / this.maxHp);
+        const fillW = Math.floor((bw - 4) * ratio);
+        bossHpGfx.fillStyle(0x1a0008, 0.9);
+        bossHpGfx.fillRoundedRect(bx, by, bw, bh, 5);
+        bossHpGfx.lineStyle(1, 0xff4466, 0.7);
+        bossHpGfx.strokeRoundedRect(bx, by, bw, bh, 5);
+        if (fillW > 0) bossHpGfx.fillStyle(0xcc2244, 0.95).fillRoundedRect(bx + 2, by + 2, fillW, bh - 4, 3);
+        if (bossHpText) bossHpText.setText(Math.ceil(this.hp) + ' / ' + this.maxHp);
     }
 
     die() {
-        this.dead = true; this.sprite.body.enable = false;
-        const s = this.sprite;
-        for (let i = 0; i < 30; i++) {
-            const a = Phaser.Math.DegToRad(Phaser.Math.Between(0, 360)), r = Phaser.Math.Between(10, 40);
-            const px = s.x + Math.cos(a)*r, py = s.y + Math.sin(a)*r;
-            const sp = gameScene.add.rectangle(px, py, Phaser.Math.Between(3, 10), Phaser.Math.Between(3, 10),
-                Math.random() < 0.5 ? 0xff2222 : 0xff8844, 1).setDepth(15);
-            gameScene.tweens.add({ targets: sp, x: px + Math.cos(a)*Phaser.Math.Between(50, 150), y: py + Math.sin(a)*Phaser.Math.Between(50, 150) - 30,
-                alpha: 0, rotation: Phaser.Math.Between(-5, 5), duration: Phaser.Math.Between(500, 1200), onComplete: () => sp.destroy() });
+        const anim = this.config.anims.dead;
+        if (anim) {
+            this.animName = 'dead';
+            this.showFrame(anim, anim.frames.length - 1);
         }
-        gameScene.cameras.main.shake(500, 0.015);
-        gameScene.tweens.add({ targets: s, alpha: 0, scaleX: 0, scaleY: 0, duration: 800, ease: 'Power3',
-            onComplete: () => { s.destroy(); this.hpGfx.destroy(); this.typeLabel.destroy(); }
-        });
-        const vt = gameScene.add.text(W/2, H/2 - 20, 'VICTORY!', { fontFamily: 'Georgia, serif', fontSize: '28px', color: '#ffcc00', fontStyle: 'bold' }).setOrigin(0.5).setDepth(201).setScrollFactor(0).setAlpha(0);
-        gameScene.tweens.add({ targets: vt, alpha: 1, duration: 800, delay: 600 });
-        if (bossNameText) bossNameText.setText('DEFEATED');
+        if (this.config.boss && bossNameText) bossNameText.setText('DÜŞTÜ');
+        super.die();
     }
 
     updateAI(delta) {
-        const s = this.sprite, dx = player.x - s.x, dist = Math.sqrt(dx*dx + (player.y-s.y)**2);
-        this.specialTimer -= delta;
-        if (this.specialTimer <= 0 && this.state !== 'attack' && !this.isDashing && !this.isSlamming) {
-            if (Math.random() < 0.5) this.startSlam();
-            else this.startDashAttack();
-            this.specialTimer = 3500 + Math.random() * 1500;
+        if (this.config.kind === 'melee') this.updateMelee(delta);
+        else this.updateRanged(delta);
+    }
+
+    updateMelee(delta) {
+        const s = this.sprite;
+        const dx = player.x - s.x;
+        const dist = Math.hypot(dx, player.y - s.y);
+        const cfg = this.config;
+        if (this.state === 'attack') {
+            this.attackTimer -= delta;
+            this.playAnim('attack');
+            const hitAt = cfg.attackDur * 0.45;
+            if (this.attackTimer < hitAt && this.attackTimer > hitAt - delta - 8) this.checkHitPlayer();
+            if (this.attackTimer <= 0) {
+                this.state = 'idle';
+                this.attackCd = cfg.attackCooldown;
+                this.releaseAttackSlot();
+            }
+            s.body.setVelocityX(0);
             return;
         }
-        if (this.isSlamming) { this.slamTimer -= delta; this.playAnim('special'); if (this.slamTimer <= 0) { this.isSlamming = false; s.clearTint(); } s.body.setVelocityX(0); return; }
-        if (this.isDashing) { this.dashTimer -= delta; this.playAnim('attack'); s.setTint(0xff4400); if (this.dashTimer <= 0) { this.isDashing = false; s.body.setVelocityX(0); s.clearTint(); this.attackCd = 800; } if (Math.abs(player.x - s.x) < 60 && Math.abs(player.y - s.y) < 60) this.checkHitPlayer(); return; }
-        if (this.state === 'attack') {
-            this.attackTimer -= delta; this.playAnim('attack');
-            if (this.attackTimer < this.config.attackDur*0.3) { s.setTint(0xff2222); if (this.attackTimer < this.config.attackDur*0.25 && this.attackTimer > this.config.attackDur*0.15) this.checkHitPlayer(); }
-            if (this.attackTimer <= 0) { this.state='idle'; this.attackCd=this.config.attackCooldown; s.clearTint(); }
+        if (dist > cfg.chaseRange * 1.45) {
+            this.state = 'idle'; this.playAnim('idle'); s.body.setVelocityX(0); this.releaseAttackSlot();
+        } else if (dist < cfg.attackRange && this.attackCd <= 0 && (cfg.boss || this.isActiveAttacker())) {
+            this.state = 'attack';
+            this.attackTimer = cfg.attackDur;
+            this.playAnim('attack');
             s.body.setVelocityX(0);
-        } else if (dist < this.config.attackRange && this.attackCd <= 0) { this.state='attack'; this.attackTimer=this.config.attackDur; s.body.setVelocityX(0); }
-        else if (dist < this.config.chaseRange) { this.state='chase'; this.playAnim('walk'); s.body.setVelocityX((dx>0?1:-1)*this.config.speed); }
-        else { this.state='idle'; this.playAnim('idle'); s.body.setVelocityX(0); }
+        } else if (dist < cfg.chaseRange && (cfg.boss || this.isActiveAttacker())) {
+            this.state = 'chase'; this.playAnim('walk');
+            s.body.setVelocityX((dx > 0 ? 1 : -1) * cfg.speed);
+        } else {
+            this.state = 'idle'; this.playAnim('idle'); s.body.setVelocityX(0);
+        }
     }
 
-    startSlam() {
-        this.isSlamming = true; this.slamTimer = 800;
-        this.playAnim('special'); this.sprite.setTint(0xff8800);
-        this.sprite.body.setVelocityX(0);
-        playSlamSound();
-        gameScene.time.delayedCall(400, () => {
-            if (this.dead) return;
-            gameScene.cameras.main.shake(300, 0.015);
-            const sx = this.sprite.x, sy = this.sprite.y + 20;
-            const wave = gameScene.add.graphics().setDepth(14);
-            wave.lineStyle(4, 0xff4400, 0.7); wave.strokeCircle(sx, sy, 30);
-            gameScene.tweens.add({ targets: wave, scaleX: 3, scaleY: 1.5, alpha: 0, duration: 500, onComplete: () => wave.destroy() });
-            if (!isDashing && playerHurtTimer <= 0 && playerHP > 0 && !playerDead) {
-                if (Math.abs(player.x - sx) < 180 && Math.abs(player.y - sy) < 100) {
-                    playerHP -= 25; playerHurtTimer = PLAYER_HURT_IFRAMES; player._hurtPose = 180; playHurtSound();
-                    player.body.setVelocityY(-350); player.body.setVelocityX((player.x > sx ? 1 : -1) * 400);
-                    player.setTint(0xff4444); gameScene.cameras.main.shake(100, 0.01);
-                    updateHUD(); if (playerHP <= 0) playerDeath();
-                }
+    updateRanged(delta) {
+        const s = this.sprite;
+        const dx = player.x - s.x;
+        const dist = Math.hypot(dx, player.y - s.y);
+        const cfg = this.config;
+        if (this.shootTimer > 0 && dist >= cfg.fleeRange) {
+            this.shootTimer -= delta;
+            this.playAnim('attack');
+            s.body.setVelocityX(0);
+            if (!this._fired && this.shootTimer <= cfg.attackDur * 0.32) {
+                this._fired = true;
+                this.fireBolt();
+                this.releaseAttackSlot();
             }
-        });
+            if (this.shootTimer <= 0) this.state = 'idle';
+            return;
+        }
+        if (dist < cfg.fleeRange) {
+            this.shootTimer = 0;
+            this.state = 'flee'; this.playAnim('walk');
+            s.body.setVelocityX((dx > 0 ? -1 : 1) * cfg.speed * 1.25);
+        } else if (dist > cfg.chaseRange * 1.4) {
+            this.state = 'idle'; this.playAnim('idle'); s.body.setVelocityX(0); this.releaseAttackSlot();
+        } else if (dist < cfg.attackRange && this.attackCd <= 0 && this.isActiveAttacker()) {
+            this.state = 'shoot';
+            this.shootTimer = cfg.attackDur;
+            this._fired = false;
+            this.playAnim('attack');
+            s.body.setVelocityX(0);
+            this.attackCd = cfg.attackCooldown;
+        } else if (dist < cfg.chaseRange && dist > cfg.attackRange * 0.72 && this.isActiveAttacker()) {
+            this.state = 'chase'; this.playAnim('walk');
+            s.body.setVelocityX((dx > 0 ? 1 : -1) * cfg.speed * 0.6);
+        } else {
+            this.state = 'idle'; this.playAnim('idle'); s.body.setVelocityX(0);
+        }
     }
 
-    startDashAttack() {
-        this.isDashing = true; this.dashTimer = 450;
+    fireBolt() {
         const dir = this.facingRight ? 1 : -1;
-        this.sprite.body.setVelocityX(dir * 700);
-        this.sprite.setTint(0xff4400);
-        this.playAnim('attack');
-        gameScene.cameras.main.shake(80, 0.004);
+        const scale = this.sprite.scaleY;
+        const dims = this.config.dims;
+        const ax = this.sprite.x + dir * (this.config.handX - dims.fw * dims.originX) * scale;
+        const ay = this.sprite.y - (dims.fh - this.config.handY) * scale;
+        let gfx;
+        if (this.config.proj) {
+            gfx = gameScene.add.sprite(ax, ay, this.config.proj).setScale(Math.max(1, scale)).setFlipX(dir < 0).setDepth(15);
+        } else {
+            const key = this.config.bolt === 'lightning' ? 'bolt_lightning' : 'bolt_fire';
+            gfx = gameScene.add.sprite(ax, ay, key).setScale(2).setFlipX(dir < 0).setDepth(15);
+        }
+        projectiles.push({ gfx: gfx, x: ax, y: ay, vx: dir * 460, vy: 0, life: 2200, dmg: this.config.attackDmg });
+        if (typeof playArrowSound === 'function') playArrowSound();
     }
+}
+
+function makeSpellBolts(scene) {
+    const paint = (key, rows) => {
+        const c = document.createElement('canvas');
+        c.width = 16; c.height = 8;
+        const g = c.getContext('2d');
+        rows.forEach((hex, i) => {
+            g.fillStyle = hex;
+            g.fillRect(i * 2, 2, 2, 4);
+        });
+        g.fillRect(14, 1, 2, 6);
+        if (scene.textures.exists(key)) scene.textures.remove(key);
+        scene.textures.addCanvas(key, c);
+    };
+    paint('bolt_fire', ['#4a1408', '#a02808', '#e05010', '#ffb040', '#ffe080', '#fff6c8', '#ffd080', '#ff8020']);
+    paint('bolt_lightning', ['#102040', '#2060a0', '#60c0ff', '#d8f4ff', '#ffffff', '#c0e8ff', '#70b0ff', '#3080e0']);
+}
+
+function showRoomCard(room) {
+    if (!room || !gameScene) return;
+    const title = gameScene.add.text(W / 2, 92, room.title, {
+        fontFamily: 'Georgia, serif', fontSize: '18px', color: '#f3e6cc', fontStyle: 'bold'
+    }).setOrigin(0.5).setDepth(180).setScrollFactor(0);
+    const line = gameScene.add.text(W / 2, 116, room.line, {
+        fontFamily: 'Georgia, serif', fontSize: '12px', color: '#d8c49a', align: 'center',
+        wordWrap: { width: 760 }
+    }).setOrigin(0.5, 0).setDepth(180).setScrollFactor(0);
+    roomObjects.push(title, line);
+    gameScene.tweens.add({
+        targets: [title, line], alpha: 0, delay: 3200, duration: 700,
+        onComplete: () => {
+            if (title.scene) title.destroy();
+            if (line.scene) line.destroy();
+        }
+    });
+}
+
+function showOpening(scene) {
+    storyActive = true;
+    scene.physics.pause();
+    const veil = scene.add.rectangle(W / 2, H / 2, W, H, 0x07060a, 0.78).setDepth(400).setScrollFactor(0);
+    const title = scene.add.text(W / 2, 168, 'KIRIK YEMİN', {
+        fontFamily: 'Georgia, serif', fontSize: '36px', color: '#f3e6cc', fontStyle: 'bold'
+    }).setOrigin(0.5).setDepth(410).setScrollFactor(0);
+    const body = scene.add.text(W / 2, 250,
+        'Bu kapıda yeminini bozmuştu. Kale hâlâ ayakta.\nİçinde yürüyenler artık onun adamları değil.\n\nLanet kapı kapı bölünmüş. Her kapı başka bir beden bulmuş:\nyumruk, yılan, kemik, boynuz, büyü ve kan.\nKılıç, yeminin kaldığı yere kadar gidecek.',
+        {
+            fontFamily: 'Georgia, serif', fontSize: '16px', color: '#d8c49a', align: 'center',
+            wordWrap: { width: 820 }, lineSpacing: 6
+        }
+    ).setOrigin(0.5, 0).setDepth(410).setScrollFactor(0);
+    const hint = scene.add.text(W / 2, 560, 'Devam etmek için tıkla', {
+        fontFamily: 'monospace', fontSize: '13px', color: '#aa9977'
+    }).setOrigin(0.5).setDepth(410).setScrollFactor(0);
+    scene.tweens.add({ targets: hint, alpha: 0.35, duration: 800, yoyo: true, repeat: -1 });
+    storyObjects = [veil, title, body, hint];
+}
+
+function dismissStory() {
+    if (!storyActive) return;
+    storyActive = false;
+    storyObjects.forEach(obj => { if (obj && obj.destroy) obj.destroy(); });
+    storyObjects = [];
+    if (gameScene && gameScene.physics) gameScene.physics.resume();
+    showRoomCard(ROOMS[currentRoom]);
+}
+
+function showEnding() {
+    if (storyActive) return;
+    storyActive = true;
+    gameScene.physics.pause();
+    const veil = gameScene.add.rectangle(W / 2, H / 2, W, H, 0x07060a, 0.72).setDepth(400).setScrollFactor(0);
+    const title = gameScene.add.text(W / 2, 240, 'YEMİN KAPANDI', {
+        fontFamily: 'Georgia, serif', fontSize: '32px', color: '#f3e6cc', fontStyle: 'bold'
+    }).setOrigin(0.5).setDepth(410).setScrollFactor(0);
+    const body = gameScene.add.text(W / 2, 310,
+        'Kontes düştü. Kale bir anlığına sessiz kaldı.\nRonin kılıcını indirdi. Bu sefer bırakmak için değil.',
+        {
+            fontFamily: 'Georgia, serif', fontSize: '16px', color: '#d8c49a', align: 'center',
+            wordWrap: { width: 760 }, lineSpacing: 6
+        }
+    ).setOrigin(0.5, 0).setDepth(410).setScrollFactor(0);
+    storyObjects = [veil, title, body];
 }
 
 // ============================================================
@@ -1556,7 +1605,8 @@ function drawPlayerHP() {
     // Kill count
     if (killCountText) {
         const alive = enemies.filter(e => !e.dead).length;
-        killCountText.setText('Enemies: ' + alive + '/' + totalEnemiesInRoom);
+        const place = ROOMS[currentRoom] ? ROOMS[currentRoom].title : '';
+        killCountText.setText(place + '   ' + alive + '/' + totalEnemiesInRoom);
     }
 }
 function updateHUD() { drawPlayerHP(); }
@@ -1676,7 +1726,7 @@ function update(time, delta) {
     player._wantRot = 0;
     if (playerDead) return;
     if (playerHP <= 0) return;
-    if (transitioning || upgradeActive) return;
+    if (transitioning || upgradeActive || storyActive) return;
 
     emberTimer -= delta;
     if (emberTimer <= 0) { spawnEmber(gameScene); emberTimer = Phaser.Math.Between(100, 250); }
@@ -1713,14 +1763,14 @@ function update(time, delta) {
     if (comboTimer > 0) { comboTimer -= delta; if (comboTimer <= 0) resetCombo(); }
 
     // Portal check — walk into portal to transition
-    if (portalActive && portalZone && currentRoom === 'main' && !transitioning) {
-        if (Math.abs(player.x - portalZone.x) < portalZone.w && Math.abs(player.y - portalZone.y) < portalZone.h) {
-            // Show upgrade before boss if not yet picked
-            if (upgradesPicked === 0) {
+    if (portalActive && portalZone && !transitioning) {
+        const room = ROOMS[currentRoom];
+        if (room && room.next && Math.abs(player.x - portalZone.x) < portalZone.w && Math.abs(player.y - portalZone.y) < portalZone.h) {
+            if (currentRoom === 'courtyard' && upgradesPicked === 0) {
                 if (!upgradeActive) showUpgradeSelection();
                 return;
             }
-            transitionToRoom('boss');
+            transitionToRoom(room.next);
             return;
         }
     }
@@ -1871,8 +1921,8 @@ function triggerAttack(isMoving, onGround) {
     let hitSomething = false;
     enemies.forEach(e => {
         if (e.dead || e.hurtTimer > 0) return;
-        const hitRange = e instanceof BossOni ? atk.hb.w + 40 : atk.hb.w;
-        const hitH = e instanceof BossOni ? atk.hb.h + 60 : atk.hb.h + 20;
+        const hitRange = e.config && e.config.boss ? atk.hb.w + 30 : atk.hb.w;
+        const hitH = e.config && e.config.boss ? atk.hb.h + 36 : atk.hb.h + 20;
         if (Math.abs(e.sprite.x - hx) < hitRange && Math.abs(e.sprite.y - hy) < hitH) {
             if (e.canTakeDamage(dir)) { e.takeDamage(atk.dmg, dir); hitSomething = true; }
         }
