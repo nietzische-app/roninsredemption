@@ -1,6 +1,6 @@
 // ============================================================
-//  RONIN'S REDEMPTION — v5
-//  The ronin is drawn from joints each frame. Enemies still use sheets.
+//  RONIN'S REDEMPTION — v6
+//  The ronin is a hand-drawn pixel sheet. Enemies still use their sheets.
 // ============================================================
 
 const W = 1280, H = 720;
@@ -70,17 +70,21 @@ let hpBarGfx, hpText;
 let killCountText = null;
 
 // ===================== SPRITE SHEET GRID =====================
-const PLAYER_COLS = 3, PLAYER_ROWS = 3;
 const ENEMY_COLS = 4, ENEMY_ROWS = 4;
-const PLAYER_HEIGHT = 118;
-const RONIN_W = 340;
-const RONIN_H = 280;
-const RONIN_FOOT_X = 170;
-const RONIN_FOOT_Y = 262;
-const RONIN_SCALE = 0.86;
-let roninCanvas = null;
-let roninCtx = null;
-let ghostSerial = 0;
+const PLAYER_HEIGHT = 140;
+const RONIN_FW = 107, RONIN_FH = 94;
+const RONIN_OX = 41, RONIN_OY = 79;
+const RONIN_SCALE = 2;
+// Frame order matches art/make_ronin.py. Attack slots are [windup, strike].
+const RONIN_FRAME = {
+    idle: 0, idle2: 1,
+    run: [2, 3, 4, 5, 6, 7],
+    jump: 8, fall: 9, wall: 10, dash: 11, parry: 12, death: 13,
+    jab: [14, 15], cross: [16, 17], hook: [18, 19],
+    upper: [20, 21], heavy: [22, 23],
+    runattack: 24, airattack: 25
+};
+let playerShadow = null;
 const ENEMY_HEIGHT = 100;
 const BOSS_HEIGHT = 220;
 
@@ -366,9 +370,16 @@ function restoreVisualOffsets() {
 
 function applyVisualOffsets() {
     if (player && !playerDead) {
-        player.setRotation(player._wantRot || 0);
+        // Pixel frames stay axis-aligned. Lean lives in the drawing, not in a rotated texture.
+        player.setRotation(0);
         const dy = player._wantDy || 0;
         if (dy) { player.y += dy; player._appliedDy = dy; }
+    }
+    if (playerShadow && player) {
+        const air = player.body && Math.abs(player.body.velocity.y) > 80;
+        playerShadow.setPosition(player.x, player.y + 3);
+        playerShadow.setScale(air ? 0.4 : 1, air ? 0.45 : 1);
+        playerShadow.setAlpha(playerDead ? 0 : (air ? 0.12 : 0.32));
     }
     for (let i = 0; i < enemies.length; i++) {
         const e = enemies[i];
@@ -377,7 +388,7 @@ function applyVisualOffsets() {
         const dy = e._wantDy || 0;
         if (dy) { s.y += dy; s._appliedDy = dy; }
     }
-    drawRonin();
+    selectRoninFrame();
 }
 
 function applyFeetBody(sprite, dims, heightRatio) {
@@ -401,6 +412,7 @@ function preload() {
     this.load.image('archer_raw', 'enemy__archer.jpg');
     this.load.image('shield_raw', 'enemy_shield.jpg');
     this.load.image('assassin_raw', 'enemy_assasin.jpg');
+    this.load.spritesheet('ronin', 'ronin_sheet.png?v=43', { frameWidth: RONIN_FW, frameHeight: RONIN_FH });
 }
 
 // ============================================================
@@ -421,24 +433,21 @@ function create() {
     EnemyAssassin.dims = assassinDims;
     BossOni.dims = oniDims;
 
-    roninCanvas = document.createElement('canvas');
-    roninCanvas.width = RONIN_W;
-    roninCanvas.height = RONIN_H;
-    roninCtx = roninCanvas.getContext('2d');
-    this.textures.addCanvas('ronin_live', roninCanvas);
-
     // Feet sit on the texture origin, so flips and landings stay put.
-    player = this.physics.add.sprite(190, 600, 'ronin_live');
+    // Body is centered on that origin, so facing left does not shift the hitbox.
+    player = this.physics.add.sprite(190, 600, 'ronin', 0);
     playerHurtTimer = 1400;
     player.setScale(RONIN_SCALE).setBounce(0).setCollideWorldBounds(true).setDepth(10);
-    player.setOrigin(RONIN_FOOT_X / RONIN_W, RONIN_FOOT_Y / RONIN_H);
-    player.body.setSize(34, 62);
-    player.body.setOffset(RONIN_FOOT_X - 17, RONIN_FOOT_Y - 62);
+    player.setOrigin(RONIN_OX / RONIN_FW, RONIN_OY / RONIN_FH);
+    player.body.setSize(15, 26);
+    player.body.setOffset(RONIN_OX - 7, RONIN_OY - 26);
     player.body.setMaxVelocityY(980);
     player.currentAnim = 'idle';
     player._atkDur = 180;
-    drawRonin();
+    player._roninFrame = -1;
+    selectRoninFrame();
     player._wantDy = 0; player._wantRot = 0; player._appliedDy = 0; player._runPhase = 0; player._prevStep = 0;
+    playerShadow = this.add.ellipse(190, 604, 36, 8, 0x000000, 0.32).setDepth(9);
 
     this.events.on('preupdate', restoreVisualOffsets);
     this.events.on('postupdate', applyVisualOffsets);
@@ -1474,283 +1483,40 @@ function drawPlayerHP() {
 function updateHUD() { drawPlayerHP(); }
 
 // ============================================================
-//  RONIN RIG
-//  Drawn facing right. FlipX mirrors the whole texture.
+//  PIXEL RONIN
+//  Drawn facing right. FlipX mirrors the whole frame.
 //  The foot line is the sprite origin, so the stride stays planted.
 // ============================================================
-const SWINGS = {
-    jab: [-0.65, 0.2],
-    cross: [-2.05, 0.5],
-    hook: [-0.3, 1.2],
-    upper: [0.9, -1.6],
-    heavy: [-2.35, 1.0],
-    runattack: [-0.55, 0.6],
-    airattack: [-1.65, 0.75]
-};
-
 function playAnim(name) {
     if (!player || playerDeadFrozen) return;
     if (player.currentAnim === name) return;
     player.currentAnim = name;
 }
 
-function clamp01(v) { return v < 0 ? 0 : v > 1 ? 1 : v; }
-function lerp(a, b, t) { return a + (b - a) * t; }
-function smoothstep(t) { t = clamp01(t); return t * t * (3 - 2 * t); }
-
-function swingAngle(name, p) {
-    const pair = SWINGS[name] || SWINGS.jab;
-    if (p < 0.16) return pair[0] + (pair[0] - pair[1]) * 0.2 * (p / 0.16);
-    return lerp(pair[0], pair[1], smoothstep((p - 0.16) / 0.5));
-}
-
-function solveLeg(hx, hy, fx, fy, thigh, shin, bend) {
-    let dx = fx - hx, dy = fy - hy;
-    let reach = Math.hypot(dx, dy) || 0.001;
-    const max = thigh + shin - 0.01;
-    const min = Math.abs(thigh - shin) + 0.01;
-    const dist = Math.max(min, Math.min(max, reach));
-    const fit = dist / reach;
-    dx *= fit; dy *= fit;
-    const base = Math.atan2(dy, dx);
-    const cosA = (thigh * thigh + dist * dist - shin * shin) / (2 * thigh * dist);
-    const a = Math.acos(Math.max(-1, Math.min(1, cosA)));
-    const thighAng = base + bend * a;
-    const kneeX = hx + Math.cos(thighAng) * thigh;
-    const kneeY = hy + Math.sin(thighAng) * thigh;
-    return { kneeX, kneeY, footX: hx + dx, footY: hy + dy };
-}
-
-function drawLimb(ctx, x1, y1, x2, y2, width, color) {
-    ctx.lineCap = 'round';
-    ctx.strokeStyle = '#07060a';
-    ctx.lineWidth = width + 4;
-    ctx.beginPath();
-    ctx.moveTo(x1, y1);
-    ctx.lineTo(x2, y2);
-    ctx.stroke();
-    ctx.strokeStyle = color;
-    ctx.lineWidth = width;
-    ctx.stroke();
-}
-
-function drawFoot(ctx, x, y) {
-    ctx.fillStyle = '#100e12';
-    ctx.beginPath();
-    ctx.ellipse(x + 5, y + 1, 9, 4.5, 0, 0, Math.PI * 2);
-    ctx.fill();
-}
-
-function drawSword(ctx, x, y, angle, reach) {
-    ctx.save();
-    ctx.translate(x, y);
-    ctx.rotate(angle);
-    ctx.fillStyle = '#3a221c';
-    ctx.fillRect(-18, -3.5, 18, 7);
-    ctx.fillStyle = '#e6c56a';
-    ctx.fillRect(-3, -8, 5, 16);
-    ctx.beginPath();
-    ctx.moveTo(2, -3.2);
-    ctx.lineTo(reach - 8, -1.4);
-    ctx.lineTo(reach, 0);
-    ctx.lineTo(reach - 8, 1.4);
-    ctx.lineTo(2, 3.2);
-    ctx.closePath();
-    ctx.fillStyle = '#d7e0ee';
-    ctx.fill();
-    ctx.strokeStyle = '#9af6ff';
-    ctx.lineWidth = 1.4;
-    ctx.beginPath();
-    ctx.moveTo(6, -2.2);
-    ctx.lineTo(reach - 10, -0.5);
-    ctx.stroke();
-    ctx.restore();
-}
-
-function drawRonin() {
-    if (!roninCtx || !player) return;
-    const ctx = roninCtx;
-    ctx.clearRect(0, 0, RONIN_W, RONIN_H);
+function selectRoninFrame() {
+    if (!player) return;
     const anim = player.currentAnim || 'idle';
-    const phase = player._runPhase || 0;
-    const now = (typeof performance !== 'undefined' ? performance.now() : 0) / 1000;
-    const breathe = Math.sin(now * 2.2) * (anim === 'idle' ? 1.6 : 0.4);
-    const atkP = (isAttacking && player._atkDur) ? clamp01(1 - attackTimer / player._atkDur) : 0;
-    const attacking = isAttacking && SWINGS[anim];
-
-    const hipX = RONIN_FOOT_X;
-    const hipY = RONIN_FOOT_Y - 58 + breathe;
-    const thigh = 30, shin = 28;
-    let torsoLean = 0;
-    let footA = { x: hipX - 12, y: RONIN_FOOT_Y };
-    let footB = { x: hipX + 14, y: RONIN_FOOT_Y };
-    let swordAng = 0.42;
-    let twoHand = true;
-
-    if (anim === 'run') {
-        const s = Math.sin(phase), c = Math.cos(phase);
-        footA = { x: hipX - s * 40, y: RONIN_FOOT_Y - Math.max(0, c) * 28 };
-        footB = { x: hipX + s * 40, y: RONIN_FOOT_Y - Math.max(0, -c) * 28 };
-        torsoLean = 0.16;
-        swordAng = 0.35 - s * 0.9;
-        twoHand = false;
-    } else if (anim === 'jump') {
-        footA = { x: hipX - 10, y: hipY + 16 };
-        footB = { x: hipX + 18, y: hipY + 18 };
-        torsoLean = 0.22;
-        swordAng = -0.9;
-        twoHand = false;
-    } else if (anim === 'fall') {
-        footA = { x: hipX - 4, y: RONIN_FOOT_Y - 10 };
-        footB = { x: hipX + 20, y: RONIN_FOOT_Y - 2 };
-        torsoLean = 0.08;
-        swordAng = 0.15;
-    } else if (anim === 'wall') {
-        footA = { x: hipX - 4, y: RONIN_FOOT_Y - 6 };
-        footB = { x: hipX + 8, y: RONIN_FOOT_Y };
-        torsoLean = 0.05;
-        swordAng = -0.8;
-    } else if (anim === 'dash' || anim === 'runattack') {
-        footA = { x: hipX - 18, y: RONIN_FOOT_Y - 4 };
-        footB = { x: hipX + 22, y: RONIN_FOOT_Y - 8 };
-        torsoLean = 0.28;
-        swordAng = anim === 'runattack' ? swingAngle(anim, atkP) : -0.15;
-        twoHand = anim !== 'runattack';
-    } else if (anim === 'parry') {
-        swordAng = -1.25;
-        torsoLean = -0.04;
-    } else if (anim === 'death') {
-        footA = { x: hipX - 20, y: RONIN_FOOT_Y };
-        footB = { x: hipX + 18, y: RONIN_FOOT_Y - 2 };
-        torsoLean = 0.7;
-        swordAng = 1.1;
-        twoHand = false;
-    } else if (attacking) {
-        swordAng = swingAngle(anim, atkP);
-        torsoLean = swordAng * -0.12;
-        twoHand = anim === 'jab' || anim === 'cross';
-        if (anim === 'upper') {
-            footA = { x: hipX - 6, y: RONIN_FOOT_Y };
-            footB = { x: hipX + 10, y: RONIN_FOOT_Y - 8 };
+    let frame = RONIN_FRAME.idle;
+    if (anim === 'idle') {
+        frame = (Math.floor(performance.now() / 460) % 2) ? RONIN_FRAME.idle2 : RONIN_FRAME.idle;
+    } else if (anim === 'run') {
+        const cycle = Math.PI * 2;
+        const phase = ((player._runPhase % cycle) + cycle) % cycle;
+        frame = RONIN_FRAME.run[Math.floor((phase / cycle) * 6) % 6];
+    } else if (Object.prototype.hasOwnProperty.call(RONIN_FRAME, anim)) {
+        const slot = RONIN_FRAME[anim];
+        if (Array.isArray(slot)) {
+            const dur = player._atkDur || 1;
+            const p = isAttacking ? (1 - attackTimer / dur) : 1;
+            frame = (p >= 0.16 && p < 0.78) ? slot[1] : slot[0];
+        } else {
+            frame = slot;
         }
     }
-
-    if (anim === 'airattack') {
-        footA = { x: hipX - 6, y: hipY + 24 };
-        footB = { x: hipX + 18, y: hipY + 34 };
-        swordAng = swingAngle(anim, atkP);
-        torsoLean = 0.2;
-        twoHand = false;
+    if (player._roninFrame !== frame) {
+        player.setFrame(frame);
+        player._roninFrame = frame;
     }
-
-    const legA = solveLeg(hipX - 2, hipY, footA.x, footA.y, thigh, shin, -1);
-    const legB = solveLeg(hipX + 2, hipY, footB.x, footB.y, thigh, shin, 1);
-    const neckX = hipX + Math.sin(torsoLean) * 40;
-    const neckY = hipY - Math.cos(torsoLean) * 42;
-    const shoulder = { x: neckX + 2, y: neckY + 8 };
-    const armUpper = 22, armFore = 20;
-    const swordReach = anim === 'heavy' ? 96 : 84;
-    const handReach = armUpper + armFore - 4;
-    const hand = {
-        x: shoulder.x + Math.cos(swordAng) * handReach,
-        y: shoulder.y + Math.sin(swordAng) * handReach
-    };
-    const elbowBend = swordAng + 0.45;
-    const elbow = {
-        x: shoulder.x + Math.cos(elbowBend) * armUpper,
-        y: shoulder.y + Math.sin(elbowBend) * armUpper
-    };
-    const guardAng = anim === 'parry' ? -1.7 : 0.9;
-    const offHand = {
-        x: shoulder.x - 8 + Math.cos(guardAng) * 30,
-        y: shoulder.y + Math.sin(guardAng) * 30
-    };
-    if (twoHand) {
-        offHand.x = hand.x - Math.cos(swordAng) * 12;
-        offHand.y = hand.y - Math.sin(swordAng) * 12;
-    }
-
-    // Ground shadow, tied to the foot line.
-    ctx.fillStyle = 'rgba(0,0,0,0.35)';
-    ctx.beginPath();
-    ctx.ellipse(hipX, RONIN_FOOT_Y + 2, anim === 'jump' || anim === 'airattack' ? 16 : 28, 6, 0, 0, Math.PI * 2);
-    ctx.fill();
-
-    drawLimb(ctx, hipX - 2, hipY, legA.kneeX, legA.kneeY, 13, '#1c1420');
-    drawLimb(ctx, legA.kneeX, legA.kneeY, legA.footX, legA.footY, 11, '#161018');
-    drawFoot(ctx, legA.footX, legA.footY);
-
-    // Hakama.
-    const hem = anim === 'run' ? Math.sin(phase) * 8 : 0;
-    ctx.fillStyle = '#120e16';
-    ctx.beginPath();
-    ctx.moveTo(hipX - 18, hipY - 2);
-    ctx.lineTo(hipX + 18, hipY - 2);
-    ctx.lineTo(hipX + 24 + hem, hipY + 26);
-    ctx.lineTo(hipX - 22 + hem * 0.3, hipY + 24);
-    ctx.closePath();
-    ctx.fill();
-    ctx.strokeStyle = '#3a2430';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(hipX, hipY);
-    ctx.lineTo(hipX + hem * 0.4, hipY + 24);
-    ctx.stroke();
-
-    drawLimb(ctx, hipX + 2, hipY, legB.kneeX, legB.kneeY, 13, '#241828');
-    drawLimb(ctx, legB.kneeX, legB.kneeY, legB.footX, legB.footY, 11, '#1c1422');
-    drawFoot(ctx, legB.footX, legB.footY);
-
-    // Torso and sash.
-    ctx.save();
-    ctx.translate(hipX, hipY);
-    ctx.rotate(torsoLean);
-    ctx.fillStyle = '#0e0c10';
-    ctx.beginPath();
-    ctx.moveTo(-16, 4);
-    ctx.lineTo(16, 4);
-    ctx.lineTo(13, -40);
-    ctx.lineTo(-11, -40);
-    ctx.closePath();
-    ctx.fill();
-    ctx.fillStyle = '#8d2433';
-    ctx.fillRect(-16, -8, 32, 6);
-    ctx.restore();
-
-    // Head, then the hair so the spikes stay in front of the face.
-    ctx.fillStyle = '#e0b89a';
-    ctx.beginPath();
-    ctx.arc(neckX + 1, neckY - 16, 12, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = '#0a090c';
-    ctx.beginPath();
-    ctx.moveTo(neckX - 10, neckY - 18);
-    ctx.lineTo(neckX - 18, neckY - 34);
-    ctx.lineTo(neckX - 4, neckY - 24);
-    ctx.lineTo(neckX + 2, neckY - 40);
-    ctx.lineTo(neckX + 8, neckY - 24);
-    ctx.lineTo(neckX + 20, neckY - 36);
-    ctx.lineTo(neckX + 14, neckY - 16);
-    ctx.lineTo(neckX + 6, neckY - 12);
-    ctx.lineTo(neckX - 8, neckY - 12);
-    ctx.closePath();
-    ctx.fill();
-    ctx.fillStyle = '#f7fbff';
-    ctx.beginPath();
-    ctx.moveTo(neckX + 4, neckY - 18);
-    ctx.lineTo(neckX + 15, neckY - 16);
-    ctx.lineTo(neckX + 5, neckY - 13);
-    ctx.closePath();
-    ctx.fill();
-
-    // Arms and blade. The sword is the last thing, so the swing reads.
-    drawLimb(ctx, shoulder.x - 6, shoulder.y, offHand.x, offHand.y, 8, '#221824');
-    drawSword(ctx, hand.x, hand.y, swordAng, swordReach);
-    drawLimb(ctx, shoulder.x, shoulder.y, elbow.x, elbow.y, 9, '#2a1c28');
-    drawLimb(ctx, elbow.x, elbow.y, hand.x, hand.y, 8, '#d7b294');
-
-    const tex = gameScene && gameScene.textures ? gameScene.textures.get('ronin_live') : null;
-    if (tex && tex.source && tex.source[0]) tex.source[0].update();
 }
 
 // ============================================================
@@ -1774,7 +1540,7 @@ function playerDeath() {
     player.body.setVelocityX(0);
     player.body.setVelocityY(0);
     player.body.allowGravity = false;
-    gameScene.tweens.add({ targets: player, alpha: 0.5, rotation: facingRight ? 1.5 : -1.5, duration: 800, ease: 'Power2' });
+    gameScene.tweens.add({ targets: player, alpha: 0.55, duration: 800, ease: 'Power2' });
 
     const dt = gameScene.add.text(W/2, H/2 - 5, 'YOU DIED', {
         fontFamily: 'Georgia, "Times New Roman", serif', fontSize: '40px', color: '#8b0000', fontStyle: 'bold',
@@ -1862,7 +1628,6 @@ function update(time, delta) {
 
     if (isAttacking) {
         attackTimer -= delta;
-        player._wantRot = (facingRight ? 1 : -1) * 0.04;
         if (attackTimer <= 0) { isAttacking = false; clearSlash(); }
         else return;
     }
@@ -1878,7 +1643,6 @@ function update(time, delta) {
 
     if (isDashing) {
         dashTime -= delta;
-        player._wantRot = (facingRight ? 1 : -1) * 0.12;
         if (dashTime <= 0) endDash();
         else { spawnDashGhost(gameScene); return; }
     }
@@ -1924,14 +1688,8 @@ function update(time, delta) {
 
     // Motion that matches the velocity, instead of a fake frame cycle.
     const speed = Math.abs(body.velocity.x);
-    if (onWall && !onGround && !isDashing) {
-        player._wantRot = (onL ? -1 : 1) * 0.2;
-    } else if (!onGround && !isDashing && !isParrying) {
-        player._wantRot = (facingRight ? 1 : -1) * (body.velocity.y < 0 ? 0.07 : 0.11);
-    } else if (onGround && speed > 30 && !isParrying && !isDashing) {
+    if (onGround && speed > 30 && !isParrying && !isDashing) {
         player._runPhase += speed * delta * 0.000055;
-        player._wantDy = Math.sin(player._runPhase) * 3.4;
-        player._wantRot = (facingRight ? 1 : -1) * Math.min(0.07, speed / 7000);
         const step = Math.sin(player._runPhase);
         if (player._prevStep < 0 && step >= 0) spawnFootDust(gameScene, player.x, player.y);
         player._prevStep = step;
@@ -2072,23 +1830,19 @@ function startDash(scene) {
 }
 function endDash() { isDashing=false; dashTime=0; player.body.allowGravity=true; player.body.setVelocityX(player.body.velocity.x*0.2); }
 function spawnDashGhost(scene) {
-    const snap = document.createElement('canvas');
-    snap.width = RONIN_W; snap.height = RONIN_H;
-    snap.getContext('2d').drawImage(roninCanvas, 0, 0);
-    const key = 'ghost' + (ghostSerial++);
-    scene.textures.addCanvas(key, snap);
     const sc = player.scaleX;
-    const place = (tint, depth, alpha, grow, dur, dropTex) => {
-        const g = scene.add.sprite(player.x, player.y, key)
+    const frame = player.frame.name;
+    const place = (tint, depth, alpha, grow, dur) => {
+        const g = scene.add.sprite(player.x, player.y, 'ronin', frame)
             .setOrigin(player.originX, player.originY)
-            .setScale(sc).setFlipX(!facingRight).setDepth(depth).setTint(tint).setAlpha(alpha);
+            .setScale(sc).setFlipX(player.flipX).setDepth(depth).setTint(tint).setAlpha(alpha);
         scene.tweens.add({
             targets: g, alpha: 0, scaleX: sc * grow, scaleY: sc * grow, duration: dur, ease: 'Power2',
-            onComplete: () => { g.destroy(); if (dropTex && scene.textures.exists(key)) scene.textures.remove(key); }
+            onComplete: () => g.destroy()
         });
     };
-    place(0xffffff, 8, 0.5, 1.05, 180, false);
-    place(0xff2200, 7, 0.3, 1.1, 280, true);
+    place(0xffffff, 8, 0.5, 1.05, 180);
+    place(0xff2200, 7, 0.3, 1.1, 280);
 }
 
 // ============================================================
