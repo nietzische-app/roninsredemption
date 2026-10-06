@@ -487,7 +487,7 @@ function create() {
     gameScene = this;
 
     EnemyOni.dims = BIT_DIMS;
-    EnemyArcher.dims = { fw: 64, fh: 64, originX: 26 / 64, originY: 1, bodyW: 14, bodyH: 28 };
+    EnemyArcher.dims = { fw: 64, fh: 64, originX: 26 / 64, originY: 1, bodyW: 14, bodyH: 28, headTop: 16 };
     EnemyShield.dims = BIT_DIMS;
     EnemyAssassin.dims = BIT_DIMS;
     BossOni.dims = BIT_DIMS;
@@ -1008,6 +1008,10 @@ class Enemy {
 
     headY() {
         const s = this.sprite;
+        const dims = this.config.dims;
+        if (dims && dims.headTop != null) {
+            return s.y - (dims.fh * dims.originY - dims.headTop) * s.scaleY;
+        }
         return s.y - s.displayHeight * s.originY;
     }
 
@@ -1235,7 +1239,7 @@ class EnemyOni extends Enemy {
 //  ARCHER
 // ============================================================
 class EnemyArcher extends Enemy {
-    static dims = { fw: 64, fh: 64, originX: 26 / 64, originY: 1, bodyW: 14, bodyH: 28 };
+    static dims = { fw: 64, fh: 64, originX: 26 / 64, originY: 1, bodyW: 14, bodyH: 28, headTop: 16 };
     constructor(scene, x, y) {
         super(scene, x, y, {
             sheet: 'archer', label: 'ARCHER', labelColor: '#44cc44',
@@ -1280,9 +1284,11 @@ class EnemyArcher extends Enemy {
     fireArrow() {
         playArrowSound();
         const dir = this.facingRight ? 1 : -1;
-        const ax = this.sprite.x + dir * 18;
-        const ay = this.sprite.y - 46;
-        const arrow = gameScene.add.sprite(ax, ay, 'arrow').setScale(2).setFlipX(dir < 0).setDepth(15);
+        const scale = this.sprite.scaleY;
+        // The release frame draws the shaft on source row 36, leaving the bow near source x 44.
+        const ax = this.sprite.x + dir * (44 - 26) * scale;
+        const ay = this.sprite.y - (64 - 36) * scale;
+        const arrow = gameScene.add.sprite(ax, ay, 'arrow').setScale(scale).setFlipX(dir < 0).setDepth(15);
         projectiles.push({ gfx: arrow, x: ax, y: ay, vx: dir * 450, vy: 0, life: 2000, dmg: this.config.attackDmg });
     }
     die() {
