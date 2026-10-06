@@ -25,6 +25,12 @@ let facingRight = true, jumpCount = 0, onWall = false, wallDirection = 0;
 let isDashing = false, canDash = true, dashTime = 0;
 let comboStep = 0, comboTimer = 0, isAttacking = false, canAttack = true, attackTimer = 0, hitstopTimer = 0;
 let isParrying = false, parryTimer = 0, parryWindow = 0, parryCooldown = 0, parryFlash = null;
+let specialMeter = 0;
+const SPECIAL_MAX = 100;
+const SPECIAL_COST = 34; // full bar ≈ three leaps
+let specialLeapT = 0;
+let lastSpecialTarget = null;
+let enemyDropCooldown = 0;
 let slashGfx = [], emberTimer = 0, playerGlow;
 let coyoteTimer = 0, jumpBufferTimer = 0;
 let playerDead = false;
@@ -117,6 +123,8 @@ const DASH_SPEED = 900, DASH_DURATION = 150, DASH_COOLDOWN = 650;
 const COYOTE_TIME = 80, JUMP_BUFFER = 100;
 let COMBO_WINDOW = 800, HITSTOP_MS = 65;
 const PARRY_ACTIVE = 200, PARRY_TOTAL = 400, PARRY_CD = 600;
+const SPECIAL_LEAP_MS = 260;
+const SPECIAL_DMG = 40;
 
 // ===================== SF/TMNT COMBO ATTACKS =====================
 // Hitboxes are measured from the feet. oy is upward.
@@ -426,7 +434,7 @@ function applyFeetBody(sprite, dims, heightRatio) {
 }
 
 // Phone pads write the same flags the keyboard reads.
-const touch = { left: false, right: false, jump: false, atk: false, dash: false, parry: false };
+const touch = { left: false, right: false, jump: false, atk: false, dash: false, parry: false, special: false };
 const touchPads = [];
 
 function hitTouchPad(x, y) {
@@ -464,8 +472,9 @@ function createTouchControls(scene) {
     const y = H - 78;
     mk(16, y, 76, 62, 'A', 'left');
     mk(100, y, 76, 62, 'D', 'right');
-    mk(W - 262, y - 70, 78, 56, 'DASH', 'dash');
-    mk(W - 176, y - 70, 78, 56, 'C', 'parry');
+    mk(W - 346, y - 70, 78, 56, 'DASH', 'dash');
+    mk(W - 260, y - 70, 78, 56, 'V', 'parry');
+    mk(W - 174, y - 70, 78, 56, 'C', 'special');
     mk(W - 262, y, 78, 62, 'W', 'jump');
     mk(W - 176, y, 160, 62, 'X', 'atk');
 }
@@ -527,7 +536,7 @@ const ROOMS = {
     },
     crypt: {
         title: 'Kemik Mahzeni',
-        line: 'Tavan basık. Okçular alçak galeriden aşağı bakar. Aşağı in, C oku keser.',
+        line: 'Tavan basık. Okçular alçak galeriden aşağı bakar. Aşağı in, V oku keser.',
         bg: 'bg_boss', tint: 0x99aacc, layout: 'crypt',
         spawn: { x: 480, y: 580 },
         portal: { x: 1160, y: 592, w: 70, h: 46 },
@@ -658,7 +667,8 @@ function create() {
         W: this.input.keyboard.addKey('W'), S: this.input.keyboard.addKey('S'),
         SPACE: this.input.keyboard.addKey('SPACE'),
         SHIFT: this.input.keyboard.addKey('SHIFT'),
-        X: this.input.keyboard.addKey('X'), C: this.input.keyboard.addKey('C')
+        X: this.input.keyboard.addKey('X'), C: this.input.keyboard.addKey('C'),
+        V: this.input.keyboard.addKey('V')
     };
     createTouchControls(this);
     this.input.on('pointerdown', (pointer) => {
@@ -1260,7 +1270,7 @@ class Enemy {
         }
     }
 
-    takeDamage(dmg, dir) {
+    takeDamage(dmg, dir, opts) {
         if (this.dead) return;
         const finalDmg = dmg + katanaDmgBonus;
         this.hp -= finalDmg; this.hurtTimer = 200;
@@ -1280,6 +1290,7 @@ class Enemy {
         // Combo counter
         totalComboHits++;
         comboDisplayTimer = 2000;
+        if (!(opts && opts.fromSpecial)) chargeSpecial(14 + Math.min(18, finalDmg * 0.45));
         if (this.config.boss && !this._phase2 && this.hp > 0 && this.hp <= this.maxHp * 0.5) {
             this._phase2 = true;
             beginCountessPhase(this);
@@ -1351,15 +1362,65 @@ class Enemy {
         if (this.attackCd > 0) this.attackCd -= delta;
         this.facingRight = player.x > s.x;
         s.setFlipX(!this.facingRight);
+        if (this.tickDrop(delta)) {
+            this.updateAnim(delta);
+            this.drawHP();
+            return;
+        }
         this.updateAI(delta);
         this.stayOnLedge();
         this.updateAnim(delta);
         this.drawHP();
     }
 
+    onLedgePlatform() {
+        const s = this.sprite;
+        if (!s || !s.body || !platforms) return false;
+        const kids = platforms.getChildren();
+        for (let i = 0; i < kids.length; i++) {
+            const p = kids[i];
+            if (!p.body || !p.getData('ledge')) continue;
+            const left = p.x - p.body.width / 2;
+            const right = p.x + p.body.width / 2;
+            const top = p.y - p.body.height / 2;
+            if (s.x >= left - 6 && s.x <= right + 6 && Math.abs(s.body.bottom - top) <= 12) return true;
+        }
+        return false;
+    }
+
+    // After the room thins out, perched foes drop to the floor the samurai is on.
+    tickDrop(delta) {
+        const s = this.sprite;
+        if (this.dropping) {
+            this.shootTimer = 0;
+            if (this._aimGfx) this._aimGfx.clear();
+            s.body.setVelocityX(0);
+            if (s.body.velocity.y < 160) s.body.setVelocityY(220);
+            this.playAnim('walk');
+            if ((s.body.blocked.down || s.body.touching.down) && !this._dropPlat) {
+                this.dropping = false;
+            }
+            return true;
+        }
+        if (this.config.boss || this.state === 'attack') return false;
+        if (enemyDropCooldown > 0 || !roomThinned()) return false;
+        if (!(s.body.blocked.down || s.body.touching.down)) return false;
+        if (player.y < s.y + 70) return false;
+        if (!this.onLedgePlatform()) return false;
+        this.dropping = true;
+        this._dropPlat = null;
+        this.state = 'idle';
+        this.shootTimer = 0;
+        s.body.setVelocityX(0);
+        s.body.setVelocityY(240);
+        enemyDropCooldown = 480;
+        return true;
+    }
+
     // These sheets have no jump. Walking off a roof dumps everyone onto the player.
     stayOnLedge() {
         const s = this.sprite;
+        if (this.dropping) return;
         if (!s.body || Math.abs(s.body.velocity.x) < 8) return;
         if (!(s.body.blocked.down || s.body.touching.down)) return;
         const dir = s.body.velocity.x > 0 ? 1 : -1;
@@ -1737,8 +1798,93 @@ function createHUD(scene) {
     scene.comboText = scene.add.text(W/2, 150, '', { fontFamily: 'monospace', fontSize: '24px', color: '#fff', fontStyle: 'bold' }).setOrigin(0.5).setDepth(100).setAlpha(0).setScrollFactor(0);
     scene.parryText = scene.add.text(W/2, 118, '', { fontFamily: 'monospace', fontSize: '18px', color: '#00ffaa', fontStyle: 'bold' }).setOrigin(0.5).setDepth(100).setAlpha(0).setScrollFactor(0);
     scene.comboCountText = scene.add.text(W - 16, 50, '', { fontFamily: 'monospace', fontSize: '14px', color: '#ff8844', fontStyle: 'bold' }).setOrigin(1, 0).setDepth(100).setScrollFactor(0).setAlpha(0);
-    killCountText = scene.add.text(16, 36, '', { fontFamily: 'monospace', fontSize: '9px', color: '#666688' }).setDepth(100).setScrollFactor(0);
+    killCountText = scene.add.text(16, 52, '', { fontFamily: 'monospace', fontSize: '9px', color: '#666688' }).setDepth(100).setScrollFactor(0);
     drawPlayerHP();
+}
+
+function chargeSpecial(amount) {
+    if (playerDead || amount <= 0) return;
+    const was = specialMeter;
+    specialMeter = Math.min(SPECIAL_MAX, specialMeter + amount);
+    if (was < SPECIAL_MAX && specialMeter >= SPECIAL_MAX && gameScene && gameScene.parryText) {
+        gameScene.parryText.setText('ÖZEL HAZIR · C').setColor('#ffcc66').setAlpha(1).setScale(1.15);
+        gameScene.tweens.add({ targets: gameScene.parryText, alpha: 0, duration: 900, ease: 'Power2' });
+    }
+    updateHUD();
+}
+
+function pickSpecialTarget() {
+    let best = null, bestD = 1e9;
+    const others = enemies.filter(e => !e.dead && e !== lastSpecialTarget);
+    const pool = others.length ? others : enemies.filter(e => !e.dead);
+    for (let i = 0; i < pool.length; i++) {
+        const e = pool[i];
+        if (!e.sprite) continue;
+        const d = Math.hypot(e.sprite.x - player.x, e.sprite.y - player.y);
+        if (d < bestD) { bestD = d; best = e; }
+    }
+    return best;
+}
+
+function triggerSpecialLeap() {
+    if (!player || playerDead || playerDeadFrozen || upgradeActive || storyActive || transitioning) return;
+    if (specialLeapT > 0 || isParrying || isDashing) return;
+    if (specialMeter < SPECIAL_COST) return;
+    const target = pickSpecialTarget();
+    if (!target || !target.sprite) return;
+
+    specialMeter = Math.max(0, specialMeter - SPECIAL_COST);
+    lastSpecialTarget = target;
+    specialLeapT = SPECIAL_LEAP_MS;
+    player._specialLeap = true;
+    isAttacking = false;
+    player._slide = false;
+    canAttack = false;
+    playerHurtTimer = Math.max(playerHurtTimer, SPECIAL_LEAP_MS + 80);
+
+    const dir = target.sprite.x >= player.x ? 1 : -1;
+    facingRight = dir > 0;
+    const fromX = player.x, fromY = player.y - 40;
+    const landX = Phaser.Math.Clamp(target.sprite.x - dir * 42, 40, W - 40);
+    const landY = target.sprite.y;
+    player.setPosition(landX, landY);
+    player.body.setVelocity(0, 0);
+    player.body.allowGravity = false;
+    player.setFlipX(!facingRight);
+    playAnim('heavy');
+    playSlashSound();
+
+    const trail = gameScene.add.graphics().setDepth(14);
+    trail.lineStyle(3, 0xffdd88, 0.75);
+    trail.lineBetween(fromX, fromY, landX, landY - 40);
+    trail.lineStyle(1.5, 0xffffff, 0.9);
+    trail.lineBetween(fromX, fromY, landX, landY - 40);
+    gameScene.tweens.add({ targets: trail, alpha: 0, duration: 220, onComplete: () => trail.destroy() });
+
+    const hx = player.x + 50 * dir, hy = player.y - 48;
+    drawBladeTrail(gameScene, hx, hy, ATTACKS[4], dir, 4);
+    spawnBladeParticles(gameScene, hx, hy, dir, 4);
+    target.takeDamage(SPECIAL_DMG, dir, { fromSpecial: true });
+    gameScene.cameras.main.shake(90, 0.006);
+    if (gameScene.comboText) {
+        gameScene.comboText.setText('ZİNCİR').setColor('#ffcc66').setAlpha(1).setScale(1.25);
+        gameScene.tweens.add({ targets: gameScene.comboText, alpha: 0, duration: 500, ease: 'Power2' });
+    }
+    gameScene.time.delayedCall(SPECIAL_LEAP_MS + 40, () => { canAttack = true; });
+    updateHUD();
+}
+
+function tickSpecialLeap(delta) {
+    if (specialLeapT <= 0) return false;
+    specialLeapT -= delta;
+    player.body.setVelocity(0, 0);
+    playAnim('heavy');
+    if (specialLeapT <= 0) {
+        player._specialLeap = false;
+        player.body.allowGravity = true;
+        if (specialMeter < SPECIAL_COST) lastSpecialTarget = null;
+    }
+    return true;
 }
 
 function drawPlayerHP() {
@@ -1755,6 +1901,21 @@ function drawPlayerHP() {
         if (ratio < 0.3) {
             const pulse = 0.2 + Math.sin(Date.now() * 0.006) * 0.15;
             g.lineStyle(2, 0xff2222, pulse); g.strokeRoundedRect(bx - 1, by - 1, bw + 2, bh + 2, 8);
+        }
+    }
+    // Special meter under the life bar. Full → gold pulse, C leaps between foes.
+    const sx = bx, sy = by + bh + 4, sw = bw, sh = 8;
+    const sRatio = Math.max(0, specialMeter / SPECIAL_MAX);
+    const sFill = Math.floor((sw - 4) * sRatio);
+    g.fillStyle(0x0a0a1a, 0.85); g.fillRoundedRect(sx, sy, sw, sh, 4);
+    g.lineStyle(1, specialMeter >= SPECIAL_COST ? 0xccaa55 : 0x443322, 0.7); g.strokeRoundedRect(sx, sy, sw, sh, 4);
+    if (sFill > 0) {
+        const ready = specialMeter >= SPECIAL_MAX;
+        const col = ready ? 0xffcc44 : 0xc4882a;
+        g.fillStyle(col, ready ? 0.95 : 0.85); g.fillRoundedRect(sx + 2, sy + 2, sFill, sh - 4, 3);
+        if (ready) {
+            const pulse = 0.25 + Math.sin(Date.now() * 0.01) * 0.2;
+            g.lineStyle(1.5, 0xffe088, pulse); g.strokeRoundedRect(sx - 1, sy - 1, sw + 2, sh + 2, 5);
         }
     }
     if (hpText) hpText.setText(Math.ceil(playerHP));
@@ -1885,7 +2046,8 @@ function playerDeath() {
         const reviveHandler = () => {
             playerDead = false; playerDeadFrozen = false; playerHP = playerMaxHP; playerHurtTimer = PLAYER_HURT_IFRAMES; updateHUD();
             player.setAlpha(1).clearTint().setScale(RONIN_SCALE).setRotation(0);
-            player._deathT0 = 0; player._deathLand = 0; player._slide = false;
+            player._deathT0 = 0; player._deathLand = 0; player._slide = false; player._specialLeap = false;
+            specialLeapT = 0; specialMeter = 0; lastSpecialTarget = null;
             const back = (ROOMS[currentRoom] && ROOMS[currentRoom].spawn) || { x: 300, y: 600 };
             player.setPosition(back.x, back.y); player.body.setVelocity(0, 0); player.currentAnim = ''; playAnim('idle');
             playerHurtTimer = 1400;
@@ -1936,9 +2098,10 @@ function update(time, delta) {
     updatePartySystem();
     enemies.forEach(e => e.update(delta));
     if (playerDead) {
-        touch.jump = false; touch.atk = false; touch.dash = false; touch.parry = false;
+        touch.jump = false; touch.atk = false; touch.dash = false; touch.parry = false; touch.special = false;
         return;
     }
+    if (enemyDropCooldown > 0) enemyDropCooldown -= delta;
     updateProjectiles(delta);
     updateParry(delta);
     if (comboTimer > 0) { comboTimer -= delta; if (comboTimer <= 0) resetCombo(); }
@@ -1954,6 +2117,14 @@ function update(time, delta) {
             transitionToRoom(room.next);
             return;
         }
+    }
+
+    // C can cut into a leap even mid-swing once the meter has enough charge.
+    if (Phaser.Input.Keyboard.JustDown(keys.C) || touch.special) triggerSpecialLeap();
+    touch.special = false;
+    if (tickSpecialLeap(delta)) {
+        selectRoninFrame();
+        return;
     }
 
     if (isAttacking) {
@@ -2031,7 +2202,7 @@ function update(time, delta) {
     touch.dash = false;
     if (Phaser.Input.Keyboard.JustDown(keys.X) || touch.atk) triggerAttack(isMoving, onGround);
     touch.atk = false;
-    if (Phaser.Input.Keyboard.JustDown(keys.C) || touch.parry) triggerParry();
+    if (Phaser.Input.Keyboard.JustDown(keys.V) || touch.parry) triggerParry();
     touch.parry = false;
 }
 
@@ -2270,6 +2441,13 @@ function dropHeld() {
     return (cursors && cursors.down && cursors.down.isDown) || (keys && keys.S && keys.S.isDown);
 }
 
+function roomThinned() {
+    if (!totalEnemiesInRoom) return false;
+    const left = enemies.filter(e => !e.dead).length + reinforceQueue.length;
+    // Only after the opening rush: a few bodies left, or under half the roster.
+    return left <= 3 || left <= Math.floor(totalEnemiesInRoom * 0.45);
+}
+
 function oneWay(obj, plat) {
     if (!obj.body || !plat.body) return false;
     const ledge = plat.getData && plat.getData('ledge');
@@ -2283,6 +2461,17 @@ function oneWay(obj, plat) {
         }
         if (player._dropPlat === plat) {
             if (obj.body.top > plat.body.bottom + 6) player._dropPlat = null;
+            else return false;
+        }
+    } else if (ledge) {
+        const foe = enemies.find(e => e.sprite === obj);
+        if (foe && foe.dropping && obj.body.bottom <= plat.body.bottom + 4) {
+            foe._dropPlat = plat;
+            if (obj.body.velocity.y < 80) obj.body.setVelocityY(220);
+            return false;
+        }
+        if (foe && foe._dropPlat === plat) {
+            if (obj.body.top > plat.body.bottom + 6) foe._dropPlat = null;
             else return false;
         }
     }
