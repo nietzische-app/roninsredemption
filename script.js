@@ -494,25 +494,25 @@ const CASTLE_CROP = { x: 0, y: 115, w: 1023, h: 793 };
 const ROOMS = {
     courtyard: {
         title: 'Dış Avlu',
-        line: 'İsimlerini satmışlar avluyu tutuyor. Yumrukçu, shinobi, çalıntı zırhlı komutan ve çatıdaki okçular.',
+        line: 'Avlu düz değil. Sol duvar, sağ set, sonra kapı. Okçular çatıda bekliyor.',
         bg: 'bg_castle', crop: CASTLE_CROP, layout: 'castle',
-        spawn: { x: 220, y: 620 },
-        portal: { x: 640, y: 572, w: 70, h: 40 },
+        spawn: { x: 530, y: 620 },
+        portal: { x: 620, y: 508, w: 60, h: 34 },
         next: 'garden',
-        foes: [['fighter', 400, 630], ['commander', 880, 630], ['shinobi', 960, 630], ['sarcher', 352, 470], ['sarcher', 923, 470]]
+        foes: [['fighter', 250, 560], ['commander', 720, 630], ['shinobi', 820, 555], ['sarcher', 400, 440], ['sarcher', 960, 425]]
     },
     garden: {
         title: 'Yılan Bahçesi',
-        line: 'Bahçenin suyu zehir. Saçları yılan, kuyrukları kırbaç.',
+        line: 'Bahçenin suyu zehir. Yılanlar zemini tutmuş. Çatıya çıkınca kuyruk yetişmez.',
         bg: 'bg_castle', crop: CASTLE_CROP, tint: 0x6ea86a, layout: 'castle',
-        spawn: { x: 220, y: 620 },
-        portal: { x: 640, y: 572, w: 70, h: 40 },
+        spawn: { x: 530, y: 620 },
+        portal: { x: 620, y: 508, w: 60, h: 34 },
         next: 'crypt',
         foes: [['gorgon1', 380, 630], ['gorgon2', 860, 630], ['gorgon3', 980, 630]]
     },
     crypt: {
         title: 'Kemik Mahzeni',
-        line: 'Mezarlar boşalmış. Ok, mızrak ve kılıç, hepsi kemikten.',
+        line: 'Mezarlar boşalmış. Mızrak zeminde, ok galeride. Yukarı çıkmadan sağ kapı açılmaz.',
         bg: 'bg_boss', tint: 0x99aacc, layout: 'hall',
         spawn: { x: 210, y: 580 },
         portal: { x: 1160, y: 592, w: 70, h: 46 },
@@ -521,16 +521,16 @@ const ROOMS = {
     },
     ridge: {
         title: 'Yabani Sırt',
-        line: 'Surun dışında satirler nöbet tutuyor. İnsan yüzü, keçi ayağı.',
+        line: 'Surun dışında satirler. İkisi avluda, üçüncüsü sağ çatıda. Boynuz yukarıdan bakar.',
         bg: 'bg_castle', crop: CASTLE_CROP, tint: 0xc4a060, layout: 'castle',
-        spawn: { x: 220, y: 620 },
-        portal: { x: 640, y: 572, w: 70, h: 40 },
+        spawn: { x: 530, y: 620 },
+        portal: { x: 620, y: 508, w: 60, h: 34 },
         next: 'tower',
-        foes: [['satyr1', 400, 630], ['satyr2', 880, 630], ['satyr3', 923, 470]]
+        foes: [['satyr1', 360, 630], ['satyr2', 720, 630], ['satyr3', 960, 425]]
     },
     tower: {
         title: 'Büyü Kulesi',
-        line: 'Kulenin büyücüleri ateşi ve şimşeği yola germiş.',
+        line: 'Ateş sol galeride, şimşek sağda. Gezgin zemini kesiyor. Büyü yukarıdan iner.',
         bg: 'bg_boss', tint: 0xcc99ee, layout: 'hall',
         spawn: { x: 210, y: 580 },
         portal: { x: 1160, y: 592, w: 70, h: 46 },
@@ -539,16 +539,16 @@ const ROOMS = {
     },
     night: {
         title: 'Gece İç Avlu',
-        line: 'Kunoichi ve vampirler nöbette. Kan burada bir yemin gibi duruyor.',
+        line: 'Kunoichi çatılarda, vampirler avluda. Kan burada bir yemin gibi duruyor.',
         bg: 'bg_castle', crop: CASTLE_CROP, tint: 0x6677aa, layout: 'castle',
-        spawn: { x: 220, y: 620 },
-        portal: { x: 640, y: 572, w: 70, h: 40 },
+        spawn: { x: 530, y: 620 },
+        portal: { x: 620, y: 508, w: 60, h: 34 },
         next: 'throne',
-        foes: [['kunoichi', 352, 470], ['kunoichi', 923, 470], ['vgirl', 480, 630], ['converted', 940, 630]]
+        foes: [['kunoichi', 400, 440], ['kunoichi', 960, 425], ['vgirl', 360, 630], ['converted', 720, 630]]
     },
     throne: {
         title: 'Taht',
-        line: 'Kontes tahtta. Lanetin kalbi o. Yemin burada kapanır.',
+        line: 'Kontes salonun açık yerinde. Lanetin kalbi o. Yemin burada kapanır.',
         bg: 'bg_boss', tint: 0xff8866, layout: 'hall',
         spawn: { x: 240, y: 580 },
         final: true,
@@ -679,14 +679,15 @@ function clearRoom() {
 }
 
 function layCastle(scene) {
-    // Courtyard stones, then three treads that follow the painted stair up to the door.
+    // A climb spread across the yard. No two ledges share a column.
+    // Left: low wall, then the left roof, then across to the door.
+    // Right: low step, then the right roof. The door is one perch, not a stack.
     makeVisiblePlatform(scene, 640, 652 + 14, 1500, 28, 'ground');
-    makeVisiblePlatform(scene, 640, 636 + 3, 190, 6, 'stone');
-    makeVisiblePlatform(scene, 640, 606 + 3, 160, 6, 'stone');
-    makeVisiblePlatform(scene, 640, 592 + 3, 120, 6, 'stone');
-    // Thin lips on the side-roof eaves, clear of the lanterns.
-    makeVisiblePlatform(scene, 352, 494 + 3, 88, 6, 'wood');
-    makeVisiblePlatform(scene, 923, 494 + 3, 88, 6, 'wood');
+    makeVisiblePlatform(scene, 250, 588 + 4, 110, 8, 'stone');
+    makeVisiblePlatform(scene, 400, 465 + 4, 170, 8, 'wood');
+    makeVisiblePlatform(scene, 620, 525 + 4, 130, 8, 'stone');
+    makeVisiblePlatform(scene, 820, 580 + 4, 120, 8, 'stone');
+    makeVisiblePlatform(scene, 960, 450 + 4, 150, 8, 'wood');
 }
 
 function layHall(scene) {
@@ -1506,7 +1507,7 @@ function showOpening(scene) {
         fontFamily: 'Georgia, serif', fontSize: '36px', color: '#f3e6cc', fontStyle: 'bold'
     }).setOrigin(0.5).setDepth(410).setScrollFactor(0);
     const body = scene.add.text(W / 2, 250,
-        'Bu kapıda yeminini bozmuştu. Kale hâlâ ayakta.\nİçinde yürüyenler artık onun adamları değil.\n\nLanet kapı kapı bölünmüş. Her kapı başka bir beden bulmuş:\nyumruk, yılan, kemik, boynuz, büyü ve kan.\nKılıç, yeminin kaldığı yere kadar gidecek.',
+        'Bu kapıda yeminini bozmuştu. Kale hâlâ ayakta.\nİçinde yürüyenler artık onun adamları değil.\n\nLanet kapı kapı bölünmüş. Her kapı başka bir beden bulmuş:\nyumruk, yılan, kemik, boynuz, büyü ve kan.\nDuvarlar yolu saklıyor. Kılıç, yeminin kaldığı yere tırmanacak.',
         {
             fontFamily: 'Georgia, serif', fontSize: '16px', color: '#d8c49a', align: 'center',
             wordWrap: { width: 820 }, lineSpacing: 6
