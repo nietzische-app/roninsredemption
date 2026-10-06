@@ -499,14 +499,14 @@ const ROOMS = {
         title: 'Dış Avlu',
         line: 'Yukarı çıktıkça nöbet artar. Ölenin yerine kenardan biri girer. Kapı, hepsi bitince açılır.',
         bg: 'bg_castle', crop: CASTLE_CROP, layout: 'castle',
-        spawn: { x: 530, y: 620 },
-        portal: { x: 620, y: 508, w: 60, h: 34 },
+        spawn: { x: 430, y: 590 },
+        portal: { x: 640, y: 470, w: 90, h: 50 },
         next: 'garden',
         foes: [
-            ['commander', 480, 630],
-            ['fighter', 250, 560], ['shinobi', 820, 555],
-            ['sarcher', 400, 440], ['sarcher', 960, 425],
-            ['fighter', 280, 310], ['sarcher', 1040, 330], ['shinobi', 440, 225]
+            ['commander', 430, 600],
+            ['fighter', 140, 500], ['shinobi', 1060, 490],
+            ['sarcher', 220, 360], ['sarcher', 1080, 350],
+            ['fighter', 180, 220], ['sarcher', 1040, 215], ['shinobi', 220, 115]
         ],
         reserves: ['fighter', 'shinobi', 'sarcher', 'sarcher']
     },
@@ -514,10 +514,10 @@ const ROOMS = {
         title: 'Yılan Bahçesi',
         line: 'Bahçenin suyu zehir. Yılanlar zemini tutmuş. Çatıya çıkınca kuyruk yetişmez.',
         bg: 'bg_castle', crop: CASTLE_CROP, tint: 0x6ea86a, layout: 'castle',
-        spawn: { x: 530, y: 620 },
-        portal: { x: 620, y: 508, w: 60, h: 34 },
+        spawn: { x: 430, y: 590 },
+        portal: { x: 640, y: 470, w: 90, h: 50 },
         next: 'crypt',
-        foes: [['gorgon1', 360, 630], ['gorgon2', 900, 630], ['gorgon3', 400, 440], ['gorgon1', 960, 425]],
+        foes: [['gorgon1', 430, 600], ['gorgon2', 860, 600], ['gorgon3', 220, 360], ['gorgon1', 1080, 350]],
         reserves: ['gorgon2', 'gorgon3']
     },
     crypt: {
@@ -538,12 +538,12 @@ const ROOMS = {
         title: 'Yabani Sırt',
         line: 'Surun dışında satirler. İkisi avluda, üçüncüsü sağ çatıda. Boynuz yukarıdan bakar.',
         bg: 'bg_castle', crop: CASTLE_CROP, tint: 0xc4a060, layout: 'castle',
-        spawn: { x: 530, y: 620 },
-        portal: { x: 620, y: 508, w: 60, h: 34 },
+        spawn: { x: 430, y: 590 },
+        portal: { x: 640, y: 470, w: 90, h: 50 },
         next: 'tower',
         foes: [
-            ['satyr1', 480, 630], ['satyr2', 820, 555],
-            ['satyr3', 960, 425], ['satyr1', 280, 310], ['satyr2', 440, 225]
+            ['satyr1', 430, 600], ['satyr2', 1060, 490],
+            ['satyr3', 1080, 350], ['satyr1', 180, 220], ['satyr2', 220, 115]
         ],
         reserves: ['satyr3', 'satyr1', 'satyr2']
     },
@@ -565,13 +565,13 @@ const ROOMS = {
         title: 'Gece İç Avlu',
         line: 'Kunoichi çatılarda, vampirler avluda. Kan burada bir yemin gibi duruyor.',
         bg: 'bg_castle', crop: CASTLE_CROP, tint: 0x6677aa, layout: 'castle',
-        spawn: { x: 530, y: 620 },
-        portal: { x: 620, y: 508, w: 60, h: 34 },
+        spawn: { x: 430, y: 590 },
+        portal: { x: 640, y: 470, w: 90, h: 50 },
         next: 'throne',
         foes: [
-            ['vgirl', 480, 630], ['converted', 820, 555],
-            ['kunoichi', 400, 440], ['kunoichi', 960, 425],
-            ['kunoichi', 280, 310], ['vgirl', 1040, 330]
+            ['vgirl', 430, 600], ['converted', 1060, 490],
+            ['kunoichi', 220, 360], ['kunoichi', 1080, 350],
+            ['kunoichi', 180, 220], ['vgirl', 1040, 215]
         ],
         reserves: ['kunoichi', 'vgirl', 'converted']
     },
@@ -649,7 +649,8 @@ function create() {
     cursors = this.input.keyboard.createCursorKeys();
     keys = {
         A: this.input.keyboard.addKey('A'), D: this.input.keyboard.addKey('D'),
-        W: this.input.keyboard.addKey('W'), SPACE: this.input.keyboard.addKey('SPACE'),
+        W: this.input.keyboard.addKey('W'), S: this.input.keyboard.addKey('S'),
+        SPACE: this.input.keyboard.addKey('SPACE'),
         SHIFT: this.input.keyboard.addKey('SHIFT'),
         X: this.input.keyboard.addKey('X'), C: this.input.keyboard.addKey('C')
     };
@@ -711,19 +712,17 @@ function clearRoom() {
 }
 
 function layCastle(scene) {
-    // A climb spread across the yard. No two ledges share a column.
-    // Left: low wall, then the left roof, then across to the door.
-    // Right: low step, then the right roof. The door is one perch, not a stack.
-    makeVisiblePlatform(scene, 640, 652 + 14, 1500, 28, 'ground');
-    makeVisiblePlatform(scene, 250, 588 + 4, 110, 8, 'stone');
-    makeVisiblePlatform(scene, 400, 465 + 4, 170, 8, 'wood');
-    makeVisiblePlatform(scene, 620, 525 + 4, 130, 8, 'stone');
-    makeVisiblePlatform(scene, 820, 580 + 4, 120, 8, 'stone');
-    makeVisiblePlatform(scene, 960, 450 + 4, 150, 8, 'wood');
-    // A storey above the roofs, then one perch on the pagoda. Each is a running jump up.
-    makeVisiblePlatform(scene, 280, 340 + 4, 130, 8, 'wood');
-    makeVisiblePlatform(scene, 1040, 360 + 4, 200, 8, 'wood');
-    makeVisiblePlatform(scene, 440, 255 + 4, 170, 8, 'stone');
+    // Palace art is cover-fit, so the courtyard sits at the bottom of the frame.
+    // Each rise is one jump. Floors overlap so a standing jump reaches the next roof.
+    makeVisiblePlatform(scene, 640, 627 + 14, 1500, 28, 'ground');
+    makeVisiblePlatform(scene, 140, 538 + 4, 200, 8, 'stone');
+    makeVisiblePlatform(scene, 220, 398 + 4, 280, 8, 'wood');
+    makeVisiblePlatform(scene, 180, 258 + 4, 220, 8, 'wood');
+    makeVisiblePlatform(scene, 220, 150 + 4, 180, 8, 'stone');
+    makeVisiblePlatform(scene, 640, 500 + 4, 280, 8, 'stone');
+    makeVisiblePlatform(scene, 1060, 530 + 4, 200, 8, 'stone');
+    makeVisiblePlatform(scene, 1080, 390 + 4, 240, 8, 'wood');
+    makeVisiblePlatform(scene, 1040, 250 + 4, 200, 8, 'wood');
 }
 
 function layHall(scene) {
@@ -799,7 +798,7 @@ function sendReinforcement() {
     const fromLeft = (reinforceSide++ % 2) === 0;
     const room = ROOMS[currentRoom];
     const hall = room && room.layout === 'hall';
-    const e = spawnFoe(gameScene, id, fromLeft ? 90 : 1190, hall ? 590 : 628);
+    const e = spawnFoe(gameScene, id, fromLeft ? 90 : 1190, hall ? 590 : 600);
     e.entering = fromLeft ? 1 : -1;
     return e;
 }
@@ -1063,6 +1062,7 @@ function makeVisiblePlatform(scene, x, y, w, h, style) {
     }
     const plat = platforms.create(x, y, key);
     plat.setDepth(3);
+    plat.setData('ledge', style !== 'ground');
     plat.body.setSize(w, h).setOffset(0, 0);
     plat.refreshBody();
 }
@@ -1090,18 +1090,25 @@ function addFittedBackdrop(scene, key, crop) {
     const sy = crop ? crop.y : 0;
     const sw = crop ? crop.w : src.width;
     const sh = crop ? crop.h : src.height;
-    const scale = Math.min(W / sw, H / sh);
+    // The palace crop is taller than the screen. Cover the frame and pin the
+    // courtyard to the bottom so the side bars go and the stairs stay in view.
+    // The hall is already wide; contain keeps the beams where the platforms are.
+    const cover = !!crop;
+    const scale = cover ? Math.max(W / sw, H / sh) : Math.min(W / sw, H / sh);
     const dw = Math.round(sw * scale);
     const dh = Math.round(sh * scale);
     const cnv = document.createElement('canvas');
-    cnv.width = dw; cnv.height = dh;
+    cnv.width = W;
+    cnv.height = H;
     const ctx = cnv.getContext('2d');
     ctx.imageSmoothingEnabled = false;
-    ctx.drawImage(src, sx, sy, sw, sh, 0, 0, dw, dh);
-    const tkey = key + '_fit_' + (crop ? crop.y : 0);
+    const ox = Math.round((W - dw) / 2);
+    const oy = cover ? (H - dh) : Math.round((H - dh) / 2);
+    ctx.drawImage(src, sx, sy, sw, sh, ox, oy, dw, dh);
+    const tkey = key + '_fit_' + (crop ? crop.y : 0) + (cover ? '_c' : '');
     if (scene.textures.exists(tkey)) scene.textures.remove(tkey);
     scene.textures.addCanvas(tkey, cnv);
-    const img = scene.add.image(Math.round((W - dw) / 2) + dw / 2, Math.round((H - dh) / 2) + dh / 2, tkey).setDepth(0);
+    const img = scene.add.image(W / 2, H / 2, tkey).setDepth(0);
     roomObjects.push(img);
     return img;
 }
@@ -1114,8 +1121,8 @@ function drawFog(scene) {
     const v = scene.add.graphics().setDepth(90).setScrollFactor(0);
     v.fillGradientStyle(0x000000, 0x000000, 0x000000, 0x000000, 0.35, 0.35, 0, 0); v.fillRect(0, 0, W, 80);
     v.fillGradientStyle(0x000000, 0x000000, 0x000000, 0x000000, 0, 0, 0.4, 0.4); v.fillRect(0, H - 100, W, 100);
-    v.fillGradientStyle(0x000000, 0x000000, 0x000000, 0x000000, 0.3, 0, 0, 0.3); v.fillRect(0, 0, 60, H);
-    v.fillGradientStyle(0x000000, 0x000000, 0x000000, 0x000000, 0, 0.3, 0.3, 0); v.fillRect(W - 60, 0, 60, H);
+    v.fillGradientStyle(0x000000, 0x000000, 0x000000, 0x000000, 0.18, 0, 0, 0.18); v.fillRect(0, 0, 28, H);
+    v.fillGradientStyle(0x000000, 0x000000, 0x000000, 0x000000, 0, 0.18, 0.18, 0); v.fillRect(W - 28, 0, 28, H);
     roomObjects.push(v);
 }
 
@@ -1518,14 +1525,23 @@ class SheetEnemy extends Enemy {
         const dims = this.config.dims;
         const ax = this.sprite.x + dir * (this.config.handX - dims.fw * dims.originX) * scale;
         const ay = this.sprite.y - (dims.fh - this.config.handY) * scale;
+        const chestY = player.y - 40;
+        let dx = player.x - ax;
+        let dy = chestY - ay;
+        const len = Math.hypot(dx, dy) || 1;
+        const speed = 460;
+        const vx = (dx / len) * speed;
+        const vy = (dy / len) * speed;
+        // Tip sits on the right of the image. Rotation aims it; flip would turn it over.
+        const ang = Math.atan2(vy, vx);
         let gfx;
         if (this.config.proj) {
-            gfx = gameScene.add.sprite(ax, ay, this.config.proj).setScale(2).setFlipX(dir < 0).setDepth(16);
+            gfx = gameScene.add.sprite(ax, ay, this.config.proj).setScale(2).setRotation(ang).setDepth(16);
         } else {
             const key = this.config.bolt === 'lightning' ? 'bolt_lightning' : 'bolt_fire';
-            gfx = gameScene.add.sprite(ax, ay, key).setScale(2).setFlipX(dir < 0).setDepth(15);
+            gfx = gameScene.add.sprite(ax, ay, key).setScale(2).setRotation(ang).setDepth(15);
         }
-        projectiles.push({ gfx: gfx, x: ax, y: ay, vx: dir * 460, vy: 0, life: 2200, dmg: this.config.attackDmg });
+        projectiles.push({ gfx: gfx, x: ax, y: ay, vx: vx, vy: vy, life: 2200, dmg: this.config.attackDmg });
         if (typeof playArrowSound === 'function') playArrowSound();
     }
 }
@@ -1632,7 +1648,7 @@ function updateProjectiles(delta) {
                 p.gfx.destroy(); projectiles.splice(i,1); continue;
             }
         }
-        if (p.life<=0||p.x<-50||p.x>W+50) { p.gfx.destroy(); projectiles.splice(i,1); }
+        if (p.life<=0||p.x<-50||p.x>W+50||p.y<-60||p.y>H+40) { p.gfx.destroy(); projectiles.splice(i,1); }
     }
 }
 
@@ -2101,8 +2117,25 @@ function spawnEmber(scene) {
     scene.tweens.add({targets:em,x:x+Phaser.Math.Between(-30,30),y:y-Phaser.Math.Between(80,250),alpha:0,duration:Phaser.Math.Between(2000,4000),ease:'Sine.easeOut',onComplete:()=>em.destroy()});
 }
 // Thin ledges only catch you from above, so a tall sprite can walk up to a step and jump onto it.
+function dropHeld() {
+    return (cursors && cursors.down && cursors.down.isDown) || (keys && keys.S && keys.S.isDown);
+}
+
 function oneWay(obj, plat) {
     if (!obj.body || !plat.body) return false;
+    const ledge = plat.getData && plat.getData('ledge');
+    if (ledge && obj === player) {
+        // Hold down to keep falling through ledges. A tap still clears the one underfoot.
+        if (dropHeld() && obj.body.bottom <= plat.body.bottom + 4) {
+            player._dropPlat = plat;
+            if (obj.body.velocity.y < 80) obj.body.setVelocityY(220);
+            return false;
+        }
+        if (player._dropPlat === plat) {
+            if (obj.body.top > plat.body.bottom + 6) player._dropPlat = null;
+            else return false;
+        }
+    }
     const prevBottom = obj.body.bottom - obj.body.deltaY();
     return obj.body.velocity.y >= 0 && prevBottom <= plat.body.top + 8;
 }
