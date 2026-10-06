@@ -496,63 +496,63 @@ const ROOMS = {
         title: 'Dış Avlu',
         line: 'İsimlerini satmışlar avluyu tutuyor. Yumrukçu, shinobi, çalıntı zırhlı komutan ve çatıdaki okçular.',
         bg: 'bg_castle', crop: CASTLE_CROP, layout: 'castle',
-        spawn: { x: 300, y: 600 },
-        portal: { x: 640, y: 520, w: 58, h: 42 },
+        spawn: { x: 220, y: 620 },
+        portal: { x: 640, y: 572, w: 70, h: 40 },
         next: 'garden',
-        foes: [['fighter', 470, 620], ['commander', 900, 600], ['shinobi', 970, 490], ['sarcher', 340, 380], ['sarcher', 940, 380]]
+        foes: [['fighter', 400, 630], ['commander', 880, 630], ['shinobi', 960, 630], ['sarcher', 352, 470], ['sarcher', 923, 470]]
     },
     garden: {
         title: 'Yılan Bahçesi',
         line: 'Bahçenin suyu zehir. Saçları yılan, kuyrukları kırbaç.',
         bg: 'bg_castle', crop: CASTLE_CROP, tint: 0x6ea86a, layout: 'castle',
-        spawn: { x: 300, y: 600 },
-        portal: { x: 640, y: 520, w: 58, h: 42 },
+        spawn: { x: 220, y: 620 },
+        portal: { x: 640, y: 572, w: 70, h: 40 },
         next: 'crypt',
-        foes: [['gorgon1', 460, 620], ['gorgon2', 720, 540], ['gorgon3', 980, 480]]
+        foes: [['gorgon1', 380, 630], ['gorgon2', 860, 630], ['gorgon3', 980, 630]]
     },
     crypt: {
         title: 'Kemik Mahzeni',
         line: 'Mezarlar boşalmış. Ok, mızrak ve kılıç, hepsi kemikten.',
         bg: 'bg_boss', tint: 0x99aacc, layout: 'hall',
-        spawn: { x: 280, y: 560 },
-        portal: { x: 1100, y: 575, w: 70, h: 50 },
+        spawn: { x: 210, y: 580 },
+        portal: { x: 1160, y: 592, w: 70, h: 46 },
         next: 'ridge',
-        foes: [['skelwar', 520, 560], ['skelspear', 780, 560], ['skelarch', 300, 390], ['skelarch', 980, 390]]
+        foes: [['skelwar', 540, 590], ['skelspear', 760, 590], ['skelarch', 237, 428], ['skelarch', 1046, 428]]
     },
     ridge: {
         title: 'Yabani Sırt',
         line: 'Surun dışında satirler nöbet tutuyor. İnsan yüzü, keçi ayağı.',
         bg: 'bg_castle', crop: CASTLE_CROP, tint: 0xc4a060, layout: 'castle',
-        spawn: { x: 300, y: 600 },
-        portal: { x: 640, y: 520, w: 58, h: 42 },
+        spawn: { x: 220, y: 620 },
+        portal: { x: 640, y: 572, w: 70, h: 40 },
         next: 'tower',
-        foes: [['satyr1', 480, 620], ['satyr2', 780, 540], ['satyr3', 300, 480]]
+        foes: [['satyr1', 400, 630], ['satyr2', 880, 630], ['satyr3', 923, 470]]
     },
     tower: {
         title: 'Büyü Kulesi',
         line: 'Kulenin büyücüleri ateşi ve şimşeği yola germiş.',
         bg: 'bg_boss', tint: 0xcc99ee, layout: 'hall',
-        spawn: { x: 280, y: 560 },
-        portal: { x: 1100, y: 575, w: 70, h: 50 },
+        spawn: { x: 210, y: 580 },
+        portal: { x: 1160, y: 592, w: 70, h: 46 },
         next: 'night',
-        foes: [['fire', 340, 390], ['light', 960, 390], ['wanderer', 640, 540]]
+        foes: [['wanderer', 680, 590], ['fire', 237, 428], ['light', 1046, 428]]
     },
     night: {
         title: 'Gece İç Avlu',
         line: 'Kunoichi ve vampirler nöbette. Kan burada bir yemin gibi duruyor.',
         bg: 'bg_castle', crop: CASTLE_CROP, tint: 0x6677aa, layout: 'castle',
-        spawn: { x: 300, y: 600 },
-        portal: { x: 640, y: 520, w: 58, h: 42 },
+        spawn: { x: 220, y: 620 },
+        portal: { x: 640, y: 572, w: 70, h: 40 },
         next: 'throne',
-        foes: [['kunoichi', 340, 480], ['kunoichi', 960, 480], ['vgirl', 560, 620], ['converted', 900, 600]]
+        foes: [['kunoichi', 352, 470], ['kunoichi', 923, 470], ['vgirl', 480, 630], ['converted', 940, 630]]
     },
     throne: {
         title: 'Taht',
         line: 'Kontes tahtta. Lanetin kalbi o. Yemin burada kapanır.',
         bg: 'bg_boss', tint: 0xff8866, layout: 'hall',
-        spawn: { x: 280, y: 560 },
+        spawn: { x: 240, y: 580 },
         final: true,
-        foes: [['countess', 900, 540]]
+        foes: [['countess', 680, 590]]
     }
 };
 
@@ -587,7 +587,7 @@ function create() {
 
     // Feet sit on the texture origin, so flips and landings stay put.
     // Body is centered on that origin, so facing left does not shift the hitbox.
-    player = this.physics.add.sprite(300, 600, 'samurai_idle', 1);
+    player = this.physics.add.sprite(250, 620, 'samurai_idle', 1);
     playerHurtTimer = 1400;
     player._hurtPose = 0;
     player.setScale(SAM_SCALE).setBounce(0).setCollideWorldBounds(true).setDepth(10);
@@ -679,28 +679,24 @@ function clearRoom() {
 }
 
 function layCastle(scene) {
-    const groundTop = 652;
-    makeVisiblePlatform(scene, 640, groundTop + 14, 1400, 28, 'ground');
-    makeVisiblePlatform(scene, 640, 624 + 6, 210, 12, 'stone');
-    makeVisiblePlatform(scene, 640, 592 + 6, 168, 12, 'stone');
-    makeVisiblePlatform(scene, 640, 560 + 6, 132, 12, 'stone');
-    makeVisiblePlatform(scene, 640, 528 + 6, 104, 12, 'stone');
-    makeVisiblePlatform(scene, 310, 516 + 6, 150, 12, 'wood');
-    makeVisiblePlatform(scene, 970, 516 + 6, 150, 12, 'wood');
-    makeVisiblePlatform(scene, 340, 412 + 6, 180, 12, 'wood');
-    makeVisiblePlatform(scene, 940, 412 + 6, 180, 12, 'wood');
+    // Courtyard stones, then three treads that follow the painted stair up to the door.
+    makeVisiblePlatform(scene, 640, 652 + 14, 1500, 28, 'ground');
+    makeVisiblePlatform(scene, 640, 636 + 3, 190, 6, 'stone');
+    makeVisiblePlatform(scene, 640, 606 + 3, 160, 6, 'stone');
+    makeVisiblePlatform(scene, 640, 592 + 3, 120, 6, 'stone');
+    // Thin lips on the side-roof eaves, clear of the lanterns.
+    makeVisiblePlatform(scene, 352, 494 + 3, 88, 6, 'wood');
+    makeVisiblePlatform(scene, 923, 494 + 3, 88, 6, 'wood');
 }
 
 function layHall(scene) {
-    const groundTop = 600;
-    makeVisiblePlatform(scene, 640, groundTop + 16, 1400, 32, 'ground');
-    makeVisiblePlatform(scene, 230, 514 + 6, 150, 12, 'wood');
-    makeVisiblePlatform(scene, 1050, 514 + 6, 150, 12, 'wood');
-    makeVisiblePlatform(scene, 300, 424 + 6, 230, 12, 'balcony');
-    makeVisiblePlatform(scene, 980, 424 + 6, 230, 12, 'balcony');
-    makeVisiblePlatform(scene, 640, 458 + 6, 170, 12, 'stone');
-    makeVisiblePlatform(scene, 430, 300 + 6, 130, 12, 'stone');
-    makeVisiblePlatform(scene, 850, 300 + 6, 130, 12, 'stone');
+    // Floorboards. Gallery decks and the lintel are one storey up; rafters sit on the high beams.
+    makeVisiblePlatform(scene, 640, 616 + 16, 1500, 32, 'ground');
+    makeVisiblePlatform(scene, 237, 452 + 3, 130, 6, 'balcony');
+    makeVisiblePlatform(scene, 1046, 452 + 3, 130, 6, 'balcony');
+    makeVisiblePlatform(scene, 604, 454 + 3, 200, 6, 'stone');
+    makeVisiblePlatform(scene, 416, 292 + 3, 120, 6, 'wood');
+    makeVisiblePlatform(scene, 890, 292 + 3, 120, 6, 'wood');
 }
 
 function buildRoom(scene, roomName) {
