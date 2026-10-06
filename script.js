@@ -474,7 +474,8 @@ function preload() {
     this.load.spritesheet('samurai_atk', 'samurai_atk.png?v=45', sam);
     this.load.spritesheet('samurai_dash', 'samurai_dash.png?v=45', sam);
     this.load.spritesheet('oni', 'oni_sheet.png?v=45', frame);
-    this.load.spritesheet('archer', 'archer_sheet.png?v=45', frame);
+    this.load.spritesheet('archer', 'archer_green.png?v=46', { frameWidth: 64, frameHeight: 64 });
+    this.load.image('arrow', 'arrow.png?v=46');
     this.load.spritesheet('shield', 'shield_sheet.png?v=45', frame);
     this.load.spritesheet('assassin', 'assassin_sheet.png?v=45', frame);
 }
@@ -486,7 +487,7 @@ function create() {
     gameScene = this;
 
     EnemyOni.dims = BIT_DIMS;
-    EnemyArcher.dims = BIT_DIMS;
+    EnemyArcher.dims = { fw: 64, fh: 64, originX: 26 / 64, originY: 1, bodyW: 14, bodyH: 28 };
     EnemyShield.dims = BIT_DIMS;
     EnemyAssassin.dims = BIT_DIMS;
     BossOni.dims = BIT_DIMS;
@@ -1040,7 +1041,7 @@ class Enemy {
             this.sprite.setFrame(anim.frames[0]);
             return;
         }
-        const fps = this.animName === 'idle' ? 2.2 : anim.fps;
+        const fps = anim.fps;
         this.animTimer += delta;
         if (this.animTimer >= 1000 / fps) {
             this.animTimer -= 1000 / fps;
@@ -1234,26 +1235,42 @@ class EnemyOni extends Enemy {
 //  ARCHER
 // ============================================================
 class EnemyArcher extends Enemy {
-    static dims = { fw: 256, fh: 256 };
+    static dims = { fw: 64, fh: 64, originX: 26 / 64, originY: 1, bodyW: 14, bodyH: 28 };
     constructor(scene, x, y) {
         super(scene, x, y, {
             sheet: 'archer', label: 'ARCHER', labelColor: '#44cc44',
-            hp: 70, pixelHeight: ENEMY_HEIGHT, attackDmg: 10, knockback: 200,
+            hp: 70, pixelHeight: 128, attackDmg: 10, knockback: 200,
             speed: 130, chaseRange: 400, attackRange: 250, fleeRange: 100,
-            attackDur: 600, attackCooldown: 1800,
-            bodyWRatio: 0.28, bodyHRatio: 0.50, bodyYOffset: 0.30,
+            attackDur: 780, attackCooldown: 1800,
             dims: EnemyArcher.dims,
-            anims: { idle:{frames:[0,1,2,3],fps:5,loop:true}, walk:{frames:[4,5,6,7],fps:8,loop:true}, shoot:{frames:[8,9,10,11],fps:8,loop:false}, flee:{frames:[12,13,14,15],fps:10,loop:true} }
+            anims: {
+                idle:  { frames: [0, 1, 2, 3, 4], fps: 6, loop: true },
+                walk:  { frames: [22, 23, 24, 25, 26, 27, 28, 29], fps: 10, loop: true },
+                shoot: { frames: [11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21], fps: 14, loop: false },
+                flee:  { frames: [22, 23, 24, 25, 26, 27, 28, 29], fps: 14, loop: true },
+                death: { frames: [44, 45, 46, 47, 48], fps: 10, loop: false }
+            }
         });
+        this.shootTimer = 0;
     }
     updateAI(delta) {
         const s = this.sprite, dx = player.x - s.x, dist = Math.sqrt(dx*dx + (player.y-s.y)**2);
-        if (dist < this.config.fleeRange) { this.state='flee'; this.playAnim('flee'); s.body.setVelocityX((dx>0?-1:1)*this.config.speed*1.3); }
-        else if (dist > this.config.chaseRange * 1.5) {
+        if (this.shootTimer > 0 && dist >= this.config.fleeRange) {
+            this.shootTimer -= delta;
+            this.playAnim('shoot');
+            s.body.setVelocityX(0);
+            return;
+        }
+        if (dist < this.config.fleeRange) {
+            this.shootTimer = 0;
+            this.state='flee'; this.playAnim('flee');
+            s.body.setVelocityX((dx>0?-1:1)*this.config.speed*1.3);
+        } else if (dist > this.config.chaseRange * 1.5) {
             this.state='idle'; this.playAnim('idle'); s.body.setVelocityX(0); this.releaseAttackSlot();
         } else if (dist < this.config.attackRange && this.attackCd <= 0 && this.isActiveAttacker()) {
-            this.state='shoot'; this.playAnim('shoot'); s.body.setVelocityX(0); this.attackCd=this.config.attackCooldown;
-            gameScene.time.delayedCall(300, () => { if (!this.dead) { this.fireArrow(); this.releaseAttackSlot(); } });
+            this.state='shoot'; this.shootTimer = 780; this.playAnim('shoot'); s.body.setVelocityX(0);
+            this.attackCd=this.config.attackCooldown;
+            gameScene.time.delayedCall(570, () => { if (!this.dead) { this.fireArrow(); this.releaseAttackSlot(); } });
         } else if (dist < this.config.chaseRange && dist > this.config.attackRange*0.8 && this.isActiveAttacker()) {
             this.state='chase'; this.playAnim('walk'); s.body.setVelocityX((dx>0?1:-1)*this.config.speed*0.7);
         } else {
@@ -1261,13 +1278,16 @@ class EnemyArcher extends Enemy {
         }
     }
     fireArrow() {
-        playArrowSound(); const dir = this.facingRight?1:-1;
-        const ax = this.sprite.x+dir*20, ay = this.sprite.y-5;
-        const arrow = gameScene.add.graphics().setDepth(15);
-        arrow.lineStyle(2,0x88ff88,1); arrow.lineBetween(0,0,dir*18,0);
-        arrow.fillStyle(0xffffff,1); arrow.fillTriangle(dir*18,-3,dir*18,3,dir*24,0);
-        arrow.setPosition(ax, ay);
-        projectiles.push({gfx:arrow, x:ax, y:ay, vx:dir*450, vy:0, life:2000, dmg:this.config.attackDmg});
+        playArrowSound();
+        const dir = this.facingRight ? 1 : -1;
+        const ax = this.sprite.x + dir * 18;
+        const ay = this.sprite.y - 46;
+        const arrow = gameScene.add.sprite(ax, ay, 'arrow').setScale(2).setFlipX(dir < 0).setDepth(15);
+        projectiles.push({ gfx: arrow, x: ax, y: ay, vx: dir * 450, vy: 0, life: 2000, dmg: this.config.attackDmg });
+    }
+    die() {
+        if (this.sprite) this.sprite.setFrame(48);
+        super.die();
     }
 }
 
