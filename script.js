@@ -496,16 +496,16 @@ const ROOMS = {
         title: 'Dış Avlu',
         line: 'İsimlerini satmışlar avluyu tutuyor. Yumrukçu, shinobi, çalıntı zırhlı komutan ve çatıdaki okçular.',
         bg: 'bg_castle', crop: CASTLE_CROP, layout: 'castle',
-        spawn: { x: 190, y: 600 },
+        spawn: { x: 300, y: 600 },
         portal: { x: 640, y: 520, w: 58, h: 42 },
         next: 'garden',
-        foes: [['fighter', 520, 620], ['commander', 780, 600], ['shinobi', 310, 480], ['sarcher', 340, 380], ['sarcher', 940, 380]]
+        foes: [['fighter', 470, 620], ['commander', 900, 600], ['shinobi', 970, 490], ['sarcher', 340, 380], ['sarcher', 940, 380]]
     },
     garden: {
         title: 'Yılan Bahçesi',
         line: 'Bahçenin suyu zehir. Saçları yılan, kuyrukları kırbaç.',
         bg: 'bg_castle', crop: CASTLE_CROP, tint: 0x6ea86a, layout: 'castle',
-        spawn: { x: 190, y: 600 },
+        spawn: { x: 300, y: 600 },
         portal: { x: 640, y: 520, w: 58, h: 42 },
         next: 'crypt',
         foes: [['gorgon1', 460, 620], ['gorgon2', 720, 540], ['gorgon3', 980, 480]]
@@ -514,7 +514,7 @@ const ROOMS = {
         title: 'Kemik Mahzeni',
         line: 'Mezarlar boşalmış. Ok, mızrak ve kılıç, hepsi kemikten.',
         bg: 'bg_boss', tint: 0x99aacc, layout: 'hall',
-        spawn: { x: 180, y: 560 },
+        spawn: { x: 280, y: 560 },
         portal: { x: 1100, y: 575, w: 70, h: 50 },
         next: 'ridge',
         foes: [['skelwar', 520, 560], ['skelspear', 780, 560], ['skelarch', 300, 390], ['skelarch', 980, 390]]
@@ -523,7 +523,7 @@ const ROOMS = {
         title: 'Yabani Sırt',
         line: 'Surun dışında satirler nöbet tutuyor. İnsan yüzü, keçi ayağı.',
         bg: 'bg_castle', crop: CASTLE_CROP, tint: 0xc4a060, layout: 'castle',
-        spawn: { x: 190, y: 600 },
+        spawn: { x: 300, y: 600 },
         portal: { x: 640, y: 520, w: 58, h: 42 },
         next: 'tower',
         foes: [['satyr1', 480, 620], ['satyr2', 780, 540], ['satyr3', 300, 480]]
@@ -532,7 +532,7 @@ const ROOMS = {
         title: 'Büyü Kulesi',
         line: 'Kulenin büyücüleri ateşi ve şimşeği yola germiş.',
         bg: 'bg_boss', tint: 0xcc99ee, layout: 'hall',
-        spawn: { x: 180, y: 560 },
+        spawn: { x: 280, y: 560 },
         portal: { x: 1100, y: 575, w: 70, h: 50 },
         next: 'night',
         foes: [['fire', 340, 390], ['light', 960, 390], ['wanderer', 640, 540]]
@@ -541,7 +541,7 @@ const ROOMS = {
         title: 'Gece İç Avlu',
         line: 'Kunoichi ve vampirler nöbette. Kan burada bir yemin gibi duruyor.',
         bg: 'bg_castle', crop: CASTLE_CROP, tint: 0x6677aa, layout: 'castle',
-        spawn: { x: 190, y: 600 },
+        spawn: { x: 300, y: 600 },
         portal: { x: 640, y: 520, w: 58, h: 42 },
         next: 'throne',
         foes: [['kunoichi', 340, 480], ['kunoichi', 960, 480], ['vgirl', 560, 620], ['converted', 900, 600]]
@@ -550,7 +550,7 @@ const ROOMS = {
         title: 'Taht',
         line: 'Kontes tahtta. Lanetin kalbi o. Yemin burada kapanır.',
         bg: 'bg_boss', tint: 0xff8866, layout: 'hall',
-        spawn: { x: 220, y: 560 },
+        spawn: { x: 280, y: 560 },
         final: true,
         foes: [['countess', 900, 540]]
     }
@@ -571,9 +571,9 @@ function preload() {
     Object.keys(CAST).forEach((id) => {
         const def = CAST[id];
         Object.keys(def.frames).forEach((anim) => {
-            this.load.spritesheet(id + '_' + anim, 'art/cast/' + id + '_' + anim + '.png?v=48', cell);
+            this.load.spritesheet(id + '_' + anim, 'art/cast/' + id + '_' + anim + '.png?v=50', cell);
         });
-        if (def.proj) this.load.image(def.proj, 'art/cast/' + def.proj + '.png?v=48');
+        if (def.proj) this.load.image(def.proj, 'art/cast/' + def.proj + '.png?v=50');
     });
 }
 
@@ -587,7 +587,7 @@ function create() {
 
     // Feet sit on the texture origin, so flips and landings stay put.
     // Body is centered on that origin, so facing left does not shift the hitbox.
-    player = this.physics.add.sprite(190, 600, 'samurai_idle', 1);
+    player = this.physics.add.sprite(300, 600, 'samurai_idle', 1);
     playerHurtTimer = 1400;
     player._hurtPose = 0;
     player.setScale(SAM_SCALE).setBounce(0).setCollideWorldBounds(true).setDepth(10);
@@ -1456,7 +1456,7 @@ class SheetEnemy extends Enemy {
         const ay = this.sprite.y - (dims.fh - this.config.handY) * scale;
         let gfx;
         if (this.config.proj) {
-            gfx = gameScene.add.sprite(ax, ay, this.config.proj).setScale(Math.max(1, scale)).setFlipX(dir < 0).setDepth(15);
+            gfx = gameScene.add.sprite(ax, ay, this.config.proj).setScale(2).setFlipX(dir < 0).setDepth(16);
         } else {
             const key = this.config.bolt === 'lightning' ? 'bolt_lightning' : 'bolt_fire';
             gfx = gameScene.add.sprite(ax, ay, key).setScale(2).setFlipX(dir < 0).setDepth(15);
@@ -1706,7 +1706,8 @@ function playerDeath() {
         const reviveHandler = () => {
             playerDead = false; playerDeadFrozen = false; playerHP = playerMaxHP; playerHurtTimer = PLAYER_HURT_IFRAMES; updateHUD();
             player.setAlpha(1).clearTint().setScale(RONIN_SCALE).setRotation(0);
-            player.setPosition(190, 600); player.body.setVelocity(0, 0); player.currentAnim = ''; playAnim('idle');
+            const back = (ROOMS[currentRoom] && ROOMS[currentRoom].spawn) || { x: 300, y: 600 };
+            player.setPosition(back.x, back.y); player.body.setVelocity(0, 0); player.currentAnim = ''; playAnim('idle');
             playerHurtTimer = 1400;
             player.setRotation(0);
             player.body.allowGravity = true;
