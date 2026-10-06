@@ -446,37 +446,7 @@ function hitTouchPad(x, y) {
 }
 
 function createTouchControls(scene) {
-    scene.input.addPointer(2);
-    const mk = (x, y, w, h, label, key) => {
-        const g = scene.add.graphics().setScrollFactor(0).setDepth(210);
-        const paint = (hot) => {
-            g.clear();
-            g.fillStyle(hot ? 0x3a2858 : 0x120c18, hot ? 0.92 : 0.7);
-            g.fillRect(x, y, w, h);
-            g.lineStyle(2, 0xd8c49a, 1);
-            g.strokeRect(x + 1, y + 1, w - 2, h - 2);
-        };
-        paint(false);
-        scene.add.text(x + w / 2, y + h / 2, label, {
-            fontFamily: 'monospace', fontSize: label.length > 1 ? '12px' : '16px', color: '#f3e6cc'
-        }).setOrigin(0.5).setScrollFactor(0).setDepth(211);
-        const zone = scene.add.zone(x + w / 2, y + h / 2, w, h).setScrollFactor(0).setDepth(212).setInteractive();
-        touchPads.push({ x, y, w, h });
-        const hold = key === 'left' || key === 'right';
-        zone.on('pointerdown', () => { paint(true); touch[key] = true; });
-        const release = () => { paint(false); if (hold) touch[key] = false; };
-        zone.on('pointerup', release);
-        zone.on('pointerout', release);
-        zone.on('pointerupoutside', release);
-    };
-    const y = H - 78;
-    mk(16, y, 76, 62, 'A', 'left');
-    mk(100, y, 76, 62, 'D', 'right');
-    mk(W - 346, y - 70, 78, 56, 'DASH', 'dash');
-    mk(W - 260, y - 70, 78, 56, 'V', 'parry');
-    mk(W - 174, y - 70, 78, 56, 'C', 'special');
-    mk(W - 262, y, 78, 62, 'W', 'jump');
-    mk(W - 176, y, 160, 62, 'X', 'atk');
+    // Hidden for now — web keyboard play only. Call site kept so mobile pads can return later.
 }
 
 // ============================================================
