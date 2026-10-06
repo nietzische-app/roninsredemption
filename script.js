@@ -73,8 +73,8 @@ let killCountText = null;
 // ===================== SPRITE SHEET GRID =====================
 const PLAYER_COLS = 3, PLAYER_ROWS = 3;
 const ENEMY_COLS = 4, ENEMY_ROWS = 4;
-const PLAYER_HEIGHT = 124;
-const ENEMY_HEIGHT = 112;
+const PLAYER_HEIGHT = 112;
+const ENEMY_HEIGHT = 100;
 const BOSS_HEIGHT = 220;
 let playerDims = null;
 
@@ -418,7 +418,8 @@ function create() {
     playerDims = samDims;
 
     // --- PLAYER (origin sits on the feet, under the head) ---
-    player = this.physics.add.sprite(280, 600, 'sam_f4');
+    player = this.physics.add.sprite(190, 600, 'sam_f4');
+    playerHurtTimer = 1400;
     player.setScale(PLAYER_HEIGHT / samDims.fh).setBounce(0).setCollideWorldBounds(true).setDepth(10);
     applyFeetBody(player, samDims, 0.58);
     player.currentAnim = '';
@@ -526,10 +527,10 @@ function buildRoom(scene, roomName) {
         const spawnEnemy = (Type, x, y) => {
             const e = new Type(scene, x, y);
             enemies.push(e);
-            scene.physics.add.collider(e.sprite, platforms);
+            scene.physics.add.collider(e.sprite, platforms, null, oneWay);
             scene.physics.add.collider(e.sprite, walls);
         };
-        spawnEnemy(EnemyShield, 430, 620);
+        spawnEnemy(EnemyShield, 560, 620);
         spawnEnemy(EnemyOni, 980, 620);
         spawnEnemy(EnemyAssassin, 640, 590);
         spawnEnemy(EnemyAssassin, 310, 490);
@@ -557,7 +558,7 @@ function buildRoom(scene, roomName) {
 
         boss = new BossOni(scene, 900, 560);
         enemies.push(boss);
-        scene.physics.add.collider(boss.sprite, platforms);
+        scene.physics.add.collider(boss.sprite, platforms, null, oneWay);
         scene.physics.add.collider(boss.sprite, walls);
         totalEnemiesInRoom = 1;
 
@@ -572,7 +573,7 @@ function buildRoom(scene, roomName) {
     }
 
     // Colliders
-    scene.physics.add.collider(player, platforms, onLand, null, scene);
+    scene.physics.add.collider(player, platforms, onLand, oneWay);
     scene.physics.add.collider(player, walls);
 
     // Camera — no zoom, no bounds restriction
@@ -669,7 +670,7 @@ function transitionToRoom(targetRoom) {
         targets: fade, alpha: 1, duration: 400,
         onComplete: () => {
             clearRoom();
-            player.setPosition(280, 600);
+            player.setPosition(190, 600);
             player.body.setVelocity(0, 0);
             buildRoom(gameScene, targetRoom);
             gameScene.tweens.add({
@@ -1060,8 +1061,29 @@ class Enemy {
         this.facingRight = player.x > s.x;
         s.setFlipX(!this.facingRight);
         this.updateAI(delta);
+        this.stayOnLedge();
         this.updateAnim(delta);
         this.drawHP();
+    }
+
+    // These sheets have no jump. Walking off a roof dumps everyone onto the player.
+    stayOnLedge() {
+        const s = this.sprite;
+        if (!s.body || Math.abs(s.body.velocity.x) < 8) return;
+        if (!(s.body.blocked.down || s.body.touching.down)) return;
+        const dir = s.body.velocity.x > 0 ? 1 : -1;
+        const ahead = s.x + dir * (s.body.width * 0.55 + 10);
+        const probe = s.y + 10;
+        const kids = platforms ? platforms.getChildren() : [];
+        for (let i = 0; i < kids.length; i++) {
+            const p = kids[i];
+            if (!p.body) continue;
+            const left = p.x - p.body.width / 2;
+            const right = p.x + p.body.width / 2;
+            const top = p.y - p.body.height / 2;
+            if (ahead >= left && ahead <= right && probe >= top - 2 && probe <= top + 30) return;
+        }
+        s.body.setVelocityX(0);
     }
 
     updateAI(delta) {}
@@ -1515,7 +1537,8 @@ function playerDeath() {
         const reviveHandler = () => {
             playerDead = false; playerDeadFrozen = false; playerHP = playerMaxHP; playerHurtTimer = PLAYER_HURT_IFRAMES; updateHUD();
             player.setAlpha(1).clearTint().setScale(PLAYER_HEIGHT / playerDims.fh).setRotation(0);
-            player.setPosition(280, 600); player.body.setVelocity(0, 0); player.currentAnim = ''; playAnim('idle');
+            player.setPosition(190, 600); player.body.setVelocity(0, 0); player.currentAnim = ''; playAnim('idle');
+            playerHurtTimer = 1400;
             player.setRotation(0);
             player.body.allowGravity = true;
             deathUI.forEach(obj => { if (obj && obj.destroy) obj.destroy(); }); deathUI = [];
@@ -1836,4 +1859,11 @@ function spawnEmber(scene) {
     const em=scene.add.circle(x,y,Phaser.Math.Between(1,3),c,Phaser.Math.FloatBetween(0.3,0.7)).setDepth(1);
     scene.tweens.add({targets:em,x:x+Phaser.Math.Between(-30,30),y:y-Phaser.Math.Between(80,250),alpha:0,duration:Phaser.Math.Between(2000,4000),ease:'Sine.easeOut',onComplete:()=>em.destroy()});
 }
+// Thin ledges only catch you from above, so a tall sprite can walk up to a step and jump onto it.
+function oneWay(obj, plat) {
+    if (!obj.body || !plat.body) return false;
+    const prevBottom = obj.body.bottom - obj.body.deltaY();
+    return obj.body.velocity.y >= 0 && prevBottom <= plat.body.top + 8;
+}
+
 function onLand(p){if(p.body.blocked.down||p.body.touching.down)jumpCount=0;}
