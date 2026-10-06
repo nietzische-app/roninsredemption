@@ -1,6 +1,6 @@
 // ============================================================
-//  RONIN'S REDEMPTION — v6
-//  The ronin is a hand-drawn pixel sheet. Enemies still use their sheets.
+//  RONIN'S REDEMPTION — v7
+//  8-bit cast on one grid. Phone buttons sit on the same actions as the keys.
 // ============================================================
 
 const W = 1280, H = 720;
@@ -70,11 +70,16 @@ let hpBarGfx, hpText;
 let killCountText = null;
 
 // ===================== SPRITE SHEET GRID =====================
-const ENEMY_COLS = 4, ENEMY_ROWS = 4;
 const PLAYER_HEIGHT = 140;
-const RONIN_FW = 107, RONIN_FH = 94;
-const RONIN_OX = 41, RONIN_OY = 79;
-const RONIN_SCALE = 2;
+const BIT_W = 64, BIT_H = 48, BIT_OX = 26, BIT_OY = 44, BIT_SCALE = 3;
+const RONIN_FW = BIT_W, RONIN_FH = BIT_H;
+const RONIN_OX = BIT_OX, RONIN_OY = BIT_OY;
+const RONIN_SCALE = BIT_SCALE;
+const BIT_DIMS = {
+    fw: BIT_W, fh: BIT_H,
+    originX: BIT_OX / BIT_W, originY: BIT_OY / BIT_H,
+    bodyW: 12, bodyH: 18
+};
 // Frame order matches art/make_ronin.py. Attack slots are [windup, strike].
 const RONIN_FRAME = {
     idle: 0, idle2: 1,
@@ -85,8 +90,8 @@ const RONIN_FRAME = {
     runattack: 24, airattack: 25
 };
 let playerShadow = null;
-const ENEMY_HEIGHT = 100;
-const BOSS_HEIGHT = 220;
+const ENEMY_HEIGHT = BIT_H * BIT_SCALE;
+const BOSS_HEIGHT = BIT_H * 5;
 
 // ===================== TUNING =====================
 const maxJumps = 2;
@@ -393,13 +398,58 @@ function applyVisualOffsets() {
 
 function applyFeetBody(sprite, dims, heightRatio) {
     sprite.setOrigin(dims.originX, dims.originY);
-    const bw = Math.max(16, Math.round(dims.fh * 0.2));
-    const bh = Math.max(20, Math.round(dims.fh * heightRatio));
+    const bw = dims.bodyW || Math.max(16, Math.round(dims.fh * 0.2));
+    const bh = dims.bodyH || Math.max(20, Math.round(dims.fh * heightRatio));
     const footX = dims.fw * dims.originX;
     const footY = dims.fh * dims.originY;
     sprite.body.setSize(bw, bh);
     sprite.body.setOffset(Math.round(footX - bw / 2), Math.round(footY - bh));
     sprite.body.setMaxVelocityY(980);
+}
+
+// Phone pads write the same flags the keyboard reads.
+const touch = { left: false, right: false, jump: false, atk: false, dash: false, parry: false };
+const touchPads = [];
+
+function hitTouchPad(x, y) {
+    for (let i = 0; i < touchPads.length; i++) {
+        const p = touchPads[i];
+        if (x >= p.x && x <= p.x + p.w && y >= p.y && y <= p.y + p.h) return true;
+    }
+    return false;
+}
+
+function createTouchControls(scene) {
+    scene.input.addPointer(2);
+    const mk = (x, y, w, h, label, key) => {
+        const g = scene.add.graphics().setScrollFactor(0).setDepth(210);
+        const paint = (hot) => {
+            g.clear();
+            g.fillStyle(hot ? 0x3a2858 : 0x120c18, hot ? 0.92 : 0.7);
+            g.fillRect(x, y, w, h);
+            g.lineStyle(2, 0xd8c49a, 1);
+            g.strokeRect(x + 1, y + 1, w - 2, h - 2);
+        };
+        paint(false);
+        scene.add.text(x + w / 2, y + h / 2, label, {
+            fontFamily: 'monospace', fontSize: label.length > 1 ? '12px' : '16px', color: '#f3e6cc'
+        }).setOrigin(0.5).setScrollFactor(0).setDepth(211);
+        const zone = scene.add.zone(x + w / 2, y + h / 2, w, h).setScrollFactor(0).setDepth(212).setInteractive();
+        touchPads.push({ x, y, w, h });
+        const hold = key === 'left' || key === 'right';
+        zone.on('pointerdown', () => { paint(true); touch[key] = true; });
+        const release = () => { paint(false); if (hold) touch[key] = false; };
+        zone.on('pointerup', release);
+        zone.on('pointerout', release);
+        zone.on('pointerupoutside', release);
+    };
+    const y = H - 78;
+    mk(16, y, 76, 62, 'A', 'left');
+    mk(100, y, 76, 62, 'D', 'right');
+    mk(W - 262, y - 70, 78, 56, 'DASH', 'dash');
+    mk(W - 176, y - 70, 78, 56, 'C', 'parry');
+    mk(W - 262, y, 78, 62, 'W', 'jump');
+    mk(W - 176, y, 160, 62, 'X', 'atk');
 }
 
 // ============================================================
@@ -408,11 +458,12 @@ function applyFeetBody(sprite, dims, heightRatio) {
 function preload() {
     this.load.image('bg_castle', 'background.jpg');
     this.load.image('bg_boss', 'background_boss.png');
-    this.load.image('oni_raw', 'enemy_sheet.jpg');
-    this.load.image('archer_raw', 'enemy__archer.jpg');
-    this.load.image('shield_raw', 'enemy_shield.jpg');
-    this.load.image('assassin_raw', 'enemy_assasin.jpg');
-    this.load.spritesheet('ronin', 'ronin_sheet.png?v=43', { frameWidth: RONIN_FW, frameHeight: RONIN_FH });
+    const frame = { frameWidth: BIT_W, frameHeight: BIT_H };
+    this.load.spritesheet('ronin', 'ronin_sheet.png?v=44', frame);
+    this.load.spritesheet('oni', 'oni_sheet.png?v=44', frame);
+    this.load.spritesheet('archer', 'archer_sheet.png?v=44', frame);
+    this.load.spritesheet('shield', 'shield_sheet.png?v=44', frame);
+    this.load.spritesheet('assassin', 'assassin_sheet.png?v=44', frame);
 }
 
 // ============================================================
@@ -421,17 +472,11 @@ function preload() {
 function create() {
     gameScene = this;
 
-    // --- Process sheets with 3-pass ChromaKey (tolerance 45) ---
-    const oniDims = processAndSliceSheet(this, 'oni_raw', 'oni_f', 45, ENEMY_COLS, ENEMY_ROWS);
-    const archerDims = processAndSliceSheet(this, 'archer_raw', 'archer_f', 45, ENEMY_COLS, ENEMY_ROWS);
-    const shieldDims = processAndSliceSheet(this, 'shield_raw', 'shield_f', 45, ENEMY_COLS, ENEMY_ROWS);
-    const assassinDims = processAndSliceSheet(this, 'assassin_raw', 'assassin_f', 45, ENEMY_COLS, ENEMY_ROWS);
-
-    EnemyOni.dims = oniDims;
-    EnemyArcher.dims = archerDims;
-    EnemyShield.dims = shieldDims;
-    EnemyAssassin.dims = assassinDims;
-    BossOni.dims = oniDims;
+    EnemyOni.dims = BIT_DIMS;
+    EnemyArcher.dims = BIT_DIMS;
+    EnemyShield.dims = BIT_DIMS;
+    EnemyAssassin.dims = BIT_DIMS;
+    BossOni.dims = BIT_DIMS;
 
     // Feet sit on the texture origin, so flips and landings stay put.
     // Body is centered on that origin, so facing left does not shift the hitbox.
@@ -439,15 +484,15 @@ function create() {
     playerHurtTimer = 1400;
     player.setScale(RONIN_SCALE).setBounce(0).setCollideWorldBounds(true).setDepth(10);
     player.setOrigin(RONIN_OX / RONIN_FW, RONIN_OY / RONIN_FH);
-    player.body.setSize(15, 26);
-    player.body.setOffset(RONIN_OX - 7, RONIN_OY - 26);
+    player.body.setSize(10, 18);
+    player.body.setOffset(RONIN_OX - 5, RONIN_OY - 18);
     player.body.setMaxVelocityY(980);
     player.currentAnim = 'idle';
     player._atkDur = 180;
     player._roninFrame = -1;
     selectRoninFrame();
     player._wantDy = 0; player._wantRot = 0; player._appliedDy = 0; player._runPhase = 0; player._prevStep = 0;
-    playerShadow = this.add.ellipse(190, 604, 36, 8, 0x000000, 0.32).setDepth(9);
+    playerShadow = this.add.ellipse(190, 604, 44, 8, 0x000000, 0.32).setDepth(9);
 
     this.events.on('preupdate', restoreVisualOffsets);
     this.events.on('postupdate', applyVisualOffsets);
@@ -470,14 +515,16 @@ function create() {
         SHIFT: this.input.keyboard.addKey('SHIFT'),
         X: this.input.keyboard.addKey('X'), C: this.input.keyboard.addKey('C')
     };
+    createTouchControls(this);
     this.input.on('pointerdown', (pointer) => {
         if (!audioCtx) initAudio(); startBGM();
-        // Left-click triggers attack (unless dead/upgrading)
+        // A tap on open ground still swings. Pads handle their own actions.
+        if (hitTouchPad(pointer.x, pointer.y)) return;
         if (pointer.leftButtonDown() && !playerDead && !upgradeActive && !transitioning) {
             const body = player.body;
             const onGround = body.blocked.down || body.touching.down;
-            const mL = keys.A.isDown || cursors.left.isDown;
-            const mR = keys.D.isDown || cursors.right.isDown;
+            const mL = keys.A.isDown || cursors.left.isDown || touch.left;
+            const mR = keys.D.isDown || cursors.right.isDown || touch.right;
             triggerAttack(mL || mR, onGround);
         }
     });
@@ -930,7 +977,7 @@ class Enemy {
         this.state = 'idle'; this.attackTimer = 0; this.attackCd = 0; this.hurtTimer = 0;
         this.animName = 'idle'; this.animFrame = 0; this.animTimer = 0;
 
-        this.sprite = scene.physics.add.sprite(x, y, config.prefix + '0');
+        this.sprite = scene.physics.add.sprite(x, y, config.sheet, 0);
         const dims = config.dims || { fw: 256, fh: 256, originX: 0.5, originY: 0.92 };
         const targetH = config.pixelHeight || ENEMY_HEIGHT;
         this.sprite.setScale(targetH / dims.fh).setDepth(10).setBounce(0).setCollideWorldBounds(true);
@@ -968,32 +1015,24 @@ class Enemy {
         if (this.animName === name) return;
         this.animName = name; this.animFrame = 0; this.animTimer = 0;
         const anim = this.config.anims[name];
-        if (anim) this.sprite.setTexture(this.config.prefix + anim.frames[0]);
+        if (anim) this.sprite.setFrame(anim.frames[0]);
     }
 
     updateAnim(delta) {
         const anim = this.config.anims[this.animName];
-        if (!anim) return;
-        // Locomotion sheets are stills, not cycles. Hold one pose and bob with speed.
-        if (this.animName === 'idle' || this.animName === 'walk' || this.animName === 'run' || this.animName === 'flee') {
-            this.sprite.setTexture(this.config.prefix + anim.frames[0]);
-            const vx = this.sprite.body ? Math.abs(this.sprite.body.velocity.x) : 0;
-            if (vx > 24) {
-                this._phase += vx * delta * 0.00005;
-                this._wantDy = Math.sin(this._phase) * 2.6;
-            } else this._wantDy = 0;
-            return;
-        }
+        if (!anim || !anim.frames.length) return;
         this._wantDy = 0;
-        if (anim.frames.length <= 1) {
-            this.sprite.setTexture(this.config.prefix + anim.frames[0]);
+        if (anim.frames.length === 1) {
+            this.sprite.setFrame(anim.frames[0]);
             return;
         }
+        const fps = this.animName === 'idle' ? 2.2 : anim.fps;
         this.animTimer += delta;
-        if (this.animTimer >= 1000 / anim.fps) {
-            this.animTimer -= 1000 / anim.fps; this.animFrame++;
+        if (this.animTimer >= 1000 / fps) {
+            this.animTimer -= 1000 / fps;
+            this.animFrame++;
             if (this.animFrame >= anim.frames.length) this.animFrame = anim.loop ? 0 : anim.frames.length - 1;
-            this.sprite.setTexture(this.config.prefix + anim.frames[this.animFrame]);
+            this.sprite.setFrame(anim.frames[this.animFrame]);
         }
     }
 
@@ -1035,7 +1074,7 @@ class Enemy {
             gameScene.tweens.add({ targets: sp, x: px + Math.cos(a) * Phaser.Math.Between(30, 80), y: py + Math.sin(a) * Phaser.Math.Between(30, 80) - 20,
                 alpha: 0, rotation: Phaser.Math.Between(-3, 3), duration: Phaser.Math.Between(300, 600), onComplete: () => sp.destroy() });
         }
-        gameScene.tweens.add({ targets: s, alpha: 0, scaleX: 0, scaleY: 0, duration: 400, ease: 'Power3',
+        gameScene.tweens.add({ targets: s, alpha: 0, duration: 280, ease: 'Power2',
             onComplete: () => { s.destroy(); this.hpGfx.destroy(); this.typeLabel.destroy(); }
         });
         const kt = gameScene.add.text(s.x, s.y - 40, 'SLAIN', { fontFamily: 'monospace', fontSize: '12px', color: '#ff6644', fontStyle: 'bold' }).setOrigin(0.5).setDepth(30);
@@ -1147,7 +1186,7 @@ class EnemyOni extends Enemy {
     static dims = { fw: 256, fh: 256 };
     constructor(scene, x, y) {
         super(scene, x, y, {
-            prefix: 'oni_f', label: 'ONI', labelColor: '#cc66ff',
+            sheet: 'oni', label: 'ONI', labelColor: '#cc66ff',
             hp: 120, pixelHeight: ENEMY_HEIGHT, attackDmg: 18, knockback: 280,
             speed: 110, chaseRange: 300, attackRange: 55,
             attackDur: 550, attackCooldown: 1300,
@@ -1184,7 +1223,7 @@ class EnemyArcher extends Enemy {
     static dims = { fw: 256, fh: 256 };
     constructor(scene, x, y) {
         super(scene, x, y, {
-            prefix: 'archer_f', label: 'ARCHER', labelColor: '#44cc44',
+            sheet: 'archer', label: 'ARCHER', labelColor: '#44cc44',
             hp: 70, pixelHeight: ENEMY_HEIGHT, attackDmg: 10, knockback: 200,
             speed: 130, chaseRange: 400, attackRange: 250, fleeRange: 100,
             attackDur: 600, attackCooldown: 1800,
@@ -1225,7 +1264,7 @@ class EnemyShield extends Enemy {
     static dims = { fw: 256, fh: 256 };
     constructor(scene, x, y) {
         super(scene, x, y, {
-            prefix: 'shield_f', label: 'SHIELD', labelColor: '#ff6644',
+            sheet: 'shield', label: 'SHIELD', labelColor: '#ff6644',
             hp: 200, pixelHeight: ENEMY_HEIGHT, attackDmg: 20, knockback: 350,
             speed: 55, chaseRange: 250, attackRange: 50,
             attackDur: 700, attackCooldown: 2000,
@@ -1272,7 +1311,7 @@ class EnemyAssassin extends Enemy {
     static dims = { fw: 256, fh: 256 };
     constructor(scene, x, y) {
         super(scene, x, y, {
-            prefix: 'assassin_f', label: 'ASSASSIN', labelColor: '#44ddcc',
+            sheet: 'assassin', label: 'ASSASSIN', labelColor: '#44ddcc',
             hp: 80, pixelHeight: ENEMY_HEIGHT, attackDmg: 22, knockback: 200,
             speed: 220, chaseRange: 350, attackRange: 45,
             attackDur: 350, attackCooldown: 900,
@@ -1313,7 +1352,7 @@ class BossOni extends Enemy {
     static dims = { fw: 256, fh: 256 };
     constructor(scene, x, y) {
         super(scene, x, y, {
-            prefix: 'oni_f', label: '', labelColor: '#ff2222',
+            sheet: 'oni', label: '', labelColor: '#ff2222',
             hp: 600, pixelHeight: BOSS_HEIGHT, attackDmg: 25, knockback: 400,
             speed: 80, chaseRange: 600, attackRange: 80,
             attackDur: 600, attackCooldown: 1500,
@@ -1450,8 +1489,8 @@ function updateProjectiles(delta) {
 function createHUD(scene) {
     hpBarGfx = scene.add.graphics().setDepth(101).setScrollFactor(0);
     hpText = scene.add.text(92, 22, '100', { fontFamily: 'monospace', fontSize: '10px', color: '#ffffff' }).setOrigin(0.5, 0.5).setDepth(102).setScrollFactor(0);
-    scene.comboText = scene.add.text(W/2, H - 60, '', { fontFamily: 'monospace', fontSize: '24px', color: '#fff', fontStyle: 'bold' }).setOrigin(0.5).setDepth(100).setAlpha(0).setScrollFactor(0);
-    scene.parryText = scene.add.text(W/2, H - 100, '', { fontFamily: 'monospace', fontSize: '18px', color: '#00ffaa', fontStyle: 'bold' }).setOrigin(0.5).setDepth(100).setAlpha(0).setScrollFactor(0);
+    scene.comboText = scene.add.text(W/2, 150, '', { fontFamily: 'monospace', fontSize: '24px', color: '#fff', fontStyle: 'bold' }).setOrigin(0.5).setDepth(100).setAlpha(0).setScrollFactor(0);
+    scene.parryText = scene.add.text(W/2, 118, '', { fontFamily: 'monospace', fontSize: '18px', color: '#00ffaa', fontStyle: 'bold' }).setOrigin(0.5).setDepth(100).setAlpha(0).setScrollFactor(0);
     scene.comboCountText = scene.add.text(W - 16, 50, '', { fontFamily: 'monospace', fontSize: '14px', color: '#ff8844', fontStyle: 'bold' }).setOrigin(1, 0).setDepth(100).setScrollFactor(0).setAlpha(0);
     killCountText = scene.add.text(16, 36, '', { fontFamily: 'monospace', fontSize: '9px', color: '#666688' }).setDepth(100).setScrollFactor(0);
     drawPlayerHP();
@@ -1608,7 +1647,10 @@ function update(time, delta) {
 
     updatePartySystem();
     enemies.forEach(e => e.update(delta));
-    if (playerDead) return;
+    if (playerDead) {
+        touch.jump = false; touch.atk = false; touch.dash = false; touch.parry = false;
+        return;
+    }
     updateProjectiles(delta);
     updateParry(delta);
     if (comboTimer > 0) { comboTimer -= delta; if (comboTimer <= 0) resetCombo(); }
@@ -1647,9 +1689,10 @@ function update(time, delta) {
         else { spawnDashGhost(gameScene); return; }
     }
 
-    const mL = keys.A.isDown || cursors.left.isDown;
-    const mR = keys.D.isDown || cursors.right.isDown;
-    const wantJump = Phaser.Input.Keyboard.JustDown(keys.SPACE) || Phaser.Input.Keyboard.JustDown(cursors.up) || Phaser.Input.Keyboard.JustDown(keys.W);
+    const mL = keys.A.isDown || cursors.left.isDown || touch.left;
+    const mR = keys.D.isDown || cursors.right.isDown || touch.right;
+    const wantJump = Phaser.Input.Keyboard.JustDown(keys.SPACE) || Phaser.Input.Keyboard.JustDown(cursors.up) || Phaser.Input.Keyboard.JustDown(keys.W) || touch.jump;
+    touch.jump = false;
     const isMoving = mL || mR;
 
     if (onWall && !onGround) {
@@ -1695,9 +1738,12 @@ function update(time, delta) {
         player._prevStep = step;
     }
 
-    if (Phaser.Input.Keyboard.JustDown(keys.SHIFT) && canDash && !isDashing) startDash(gameScene);
-    if (Phaser.Input.Keyboard.JustDown(keys.X)) triggerAttack(isMoving, onGround);
-    if (Phaser.Input.Keyboard.JustDown(keys.C)) triggerParry();
+    if ((Phaser.Input.Keyboard.JustDown(keys.SHIFT) || touch.dash) && canDash && !isDashing) startDash(gameScene);
+    touch.dash = false;
+    if (Phaser.Input.Keyboard.JustDown(keys.X) || touch.atk) triggerAttack(isMoving, onGround);
+    touch.atk = false;
+    if (Phaser.Input.Keyboard.JustDown(keys.C) || touch.parry) triggerParry();
+    touch.parry = false;
 }
 
 function spawnFootDust(scene, x, y) {
