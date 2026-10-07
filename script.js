@@ -519,14 +519,14 @@ const ROOMS = {
     },
     ridge: {
         title: 'Yabani Sırt',
-        line: 'Surun dışında satirler. İkisi avluda, üçüncüsü sağ çatıda. Boynuz yukarıdan bakar.',
-        bg: 'bg_castle', crop: CASTLE_CROP, tint: 0xc4a060, layout: 'castle',
-        spawn: { x: 430, y: 590 },
-        portal: { x: 640, y: 470, w: 90, h: 50 },
+        line: 'Taş basamaklar sırta çıkar. Satirler yolu keser; zirvedeki boynuz aşağı bakar.',
+        bg: 'bg_castle', crop: CASTLE_CROP, tint: 0xc4a060, layout: 'ridge',
+        spawn: { x: 160, y: 590 },
+        portal: { x: 640, y: 180, w: 80, h: 50 },
         next: 'tower',
         foes: [
-            ['satyr1', 430, 600], ['satyr2', 1060, 490],
-            ['satyr3', 1080, 350], ['satyr1', 180, 220], ['satyr2', 220, 115]
+            ['satyr1', 320, 600], ['satyr2', 1080, 490],
+            ['satyr3', 640, 320], ['satyr1', 420, 400], ['satyr2', 860, 400]
         ],
         reserves: ['satyr3', 'satyr1', 'satyr2']
     },
@@ -546,15 +546,15 @@ const ROOMS = {
     },
     night: {
         title: 'Gece İç Avlu',
-        line: 'Kunoichi çatılarda, vampirler avluda. Kan burada bir yemin gibi duruyor.',
-        bg: 'bg_castle', crop: CASTLE_CROP, tint: 0x6677aa, layout: 'castle',
-        spawn: { x: 430, y: 590 },
-        portal: { x: 640, y: 470, w: 90, h: 50 },
+        line: 'Vampirler zeminde. Kunoichi yan raylarda. Can barını doldur, C ile zincirle.',
+        bg: 'bg_castle', crop: CASTLE_CROP, tint: 0x6677aa, layout: 'night',
+        spawn: { x: 200, y: 590 },
+        portal: { x: 1000, y: 530, w: 80, h: 50 },
         next: 'throne',
         foes: [
-            ['vgirl', 430, 600], ['converted', 1060, 490],
-            ['kunoichi', 220, 360], ['kunoichi', 1080, 350],
-            ['kunoichi', 180, 220], ['vgirl', 1040, 215]
+            ['vgirl', 480, 600], ['converted', 900, 600],
+            ['kunoichi', 300, 370], ['kunoichi', 980, 370],
+            ['kunoichi', 640, 250], ['vgirl', 500, 440]
         ],
         reserves: ['kunoichi', 'vgirl', 'converted']
     },
@@ -731,6 +731,28 @@ function layThrone(scene) {
     makeVisiblePlatform(scene, 640, 616 + 16, 1500, 32, 'ground');
 }
 
+function layRidge(scene) {
+    // A broken stair across the yard. Each step is one standing jump.
+    makeVisiblePlatform(scene, 640, 627 + 14, 1500, 28, 'ground');
+    makeVisiblePlatform(scene, 200, 520 + 4, 180, 8, 'stone');
+    makeVisiblePlatform(scene, 420, 430 + 4, 160, 8, 'wood');
+    makeVisiblePlatform(scene, 640, 350 + 4, 180, 8, 'stone');
+    makeVisiblePlatform(scene, 860, 430 + 4, 160, 8, 'wood');
+    makeVisiblePlatform(scene, 1080, 520 + 4, 180, 8, 'stone');
+    makeVisiblePlatform(scene, 640, 210 + 4, 140, 8, 'wood');
+}
+
+function layNight(scene) {
+    // Low side decks and mid rails. Kunoichi run the rails; vampires hold the floor.
+    makeVisiblePlatform(scene, 640, 627 + 14, 1500, 28, 'ground');
+    makeVisiblePlatform(scene, 280, 560 + 4, 240, 8, 'wood');
+    makeVisiblePlatform(scene, 1000, 560 + 4, 240, 8, 'wood');
+    makeVisiblePlatform(scene, 500, 470 + 4, 220, 8, 'balcony');
+    makeVisiblePlatform(scene, 300, 400 + 4, 200, 8, 'wood');
+    makeVisiblePlatform(scene, 980, 400 + 4, 200, 8, 'wood');
+    makeVisiblePlatform(scene, 640, 280 + 4, 180, 8, 'stone');
+}
+
 function layHall(scene) {
     // Floorboards. Gallery decks and the lintel are one storey up; rafters sit on the high beams.
     makeVisiblePlatform(scene, 640, 616 + 16, 1500, 32, 'ground');
@@ -756,6 +778,8 @@ function buildRoom(scene, roomName) {
     if (room.layout === 'garden') layGarden(scene);
     else if (room.layout === 'crypt') layCrypt(scene);
     else if (room.layout === 'throne') layThrone(scene);
+    else if (room.layout === 'ridge') layRidge(scene);
+    else if (room.layout === 'night') layNight(scene);
     else if (room.layout === 'hall') layHall(scene);
     else layCastle(scene);
     makeInvisibleWall(scene, 8, 360, 16, 720);
@@ -1695,18 +1719,25 @@ function showOpening(scene) {
     const title = scene.add.text(W / 2, 168, 'KIRIK YEMİN', {
         fontFamily: 'Georgia, serif', fontSize: '36px', color: '#f3e6cc', fontStyle: 'bold'
     }).setOrigin(0.5).setDepth(410).setScrollFactor(0);
-    const body = scene.add.text(W / 2, 250,
-        'Bu kapıda yeminini bozmuştu. Kale hâlâ ayakta.\nİçinde yürüyenler artık onun adamları değil.\n\nLanet kapı kapı bölünmüş. Her kapı başka bir beden bulmuş:\nyumruk, yılan, kemik, boynuz, büyü ve kan.\nDuvarlar yolu saklıyor. Kılıç, yeminin kaldığı yere tırmanacak.',
+    const body = scene.add.text(W / 2, 220,
+        'Bu kapıda yeminini bozmuştu. Kale hâlâ ayakta.\nİçinde yürüyenler artık onun adamları değil.\n\nLanet kapı kapı bölünmüş. Her kapı başka bir beden bulmuş:\nyumruk, yılan, kemik, boynuz, büyü ve kan.',
         {
-            fontFamily: 'Georgia, serif', fontSize: '16px', color: '#d8c49a', align: 'center',
-            wordWrap: { width: 820 }, lineSpacing: 6
+            fontFamily: 'Georgia, serif', fontSize: '15px', color: '#d8c49a', align: 'center',
+            wordWrap: { width: 820 }, lineSpacing: 5
+        }
+    ).setOrigin(0.5, 0).setDepth(410).setScrollFactor(0);
+    const controls = scene.add.text(W / 2, 400,
+        'A / D  yürü   ·   W / Space  zıpla   ·   X  vur\nAşağı + X  kayma   ·   Shift  dash   ·   V  parry   ·   C  özel zincir',
+        {
+            fontFamily: 'monospace', fontSize: '13px', color: '#c4b090', align: 'center',
+            lineSpacing: 8
         }
     ).setOrigin(0.5, 0).setDepth(410).setScrollFactor(0);
     const hint = scene.add.text(W / 2, 560, 'Devam etmek için tıkla', {
         fontFamily: 'monospace', fontSize: '13px', color: '#aa9977'
     }).setOrigin(0.5).setDepth(410).setScrollFactor(0);
     scene.tweens.add({ targets: hint, alpha: 0.35, duration: 800, yoyo: true, repeat: -1 });
-    storyObjects = [veil, title, body, hint];
+    storyObjects = [veil, title, body, controls, hint];
 }
 
 function dismissStory() {
