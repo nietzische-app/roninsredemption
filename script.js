@@ -31,6 +31,8 @@ const SPECIAL_COST = 34; // full bar ≈ three leaps
 let specialLeapT = 0;
 let lastSpecialTarget = null;
 let enemyDropCooldown = 0;
+const ENEMY_VAULT_JUMP = -540;
+const ENEMY_VAULT_REACH = 36;
 // Short buffers so presses during hitstop / a swing still land.
 let atkBuffer = 0, dashBuffer = 0, specialBuffer = 0, parryBuffer = 0;
 const INPUT_BUFFER_MS = 140;
@@ -45,7 +47,7 @@ let enemies = [];
 let projectiles = [];
 let playerHP = 100, playerMaxHP = 100;
 let playerHurtTimer = 0;
-const PLAYER_HURT_IFRAMES = 600;
+const PLAYER_HURT_IFRAMES = 680;
 let currentRoom = 'main';
 let transitioning = false;
 let boss = null;
@@ -1398,6 +1400,11 @@ class Enemy {
             this.drawHP();
             return;
         }
+        if (this.tickVault(delta)) {
+            this.updateAnim(delta);
+            this.drawHP();
+            return;
+        }
         this.updateAI(delta);
         const vxBefore = s.body.velocity.x;
         this.stayOnLedge();
@@ -1419,6 +1426,31 @@ class Enemy {
         }
         this.updateAnim(delta);
         this.drawHP();
+    }
+
+    playerAbove() {
+        return player && this.sprite && player.y < this.sprite.y - 42;
+    }
+
+    playerBelow() {
+        return player && this.sprite && player.y > this.sprite.y + 42;
+    }
+
+    findVaultLedge() {
+        const s = this.sprite;
+        if (!s || !platforms) return null;
+        let best = null, bestD = 1e9;
+        const kids = platforms.getChildren();
+        for (let i = 0; i < kids.length; i++) {
+            const p = kids[i];
+            if (!p.body || !p.getData('ledge')) continue;
+            const top = p.y - p.body.height / 2;
+            if (top > s.y - 28) continue;
+            if (top < player.y - 140) continue;
+            const d = Math.abs(p.x - player.x) * 1.2 + Math.abs(top - (player.y - 24));
+            if (d < bestD) { bestD = d; best = p; }
+        }
+        return best;
     }
 
     onLedgePlatform() {
@@ -1451,6 +1483,7 @@ class Enemy {
                 if (!this.onLedgePlatform() || player.y < s.y + 70) {
                     this.dropping = false;
                     this._dropPlat = null;
+                    this._landedFromDrop = true;
                 }
             }
             return true;
@@ -1470,10 +1503,52 @@ class Enemy {
         return true;
     }
 
+    // Melee who dropped to the floor can vault back toward the player’s ledge.
+    tickVault(delta) {
+        const s = this.sprite;
+        if (this.config.kind !== 'melee' || this.config.boss || this.dropping) return false;
+        if (this._vaultCd > 0) this._vaultCd -= delta;
+
+        if (this._vaulting) {
+            if (s.body.blocked.down || s.body.touching.down) {
+                this._vaulting = false;
+                this._vaultCd = 700;
+            } else {
+                this.playAnim('walk');
+            }
+            return true;
+        }
+
+        if (!(s.body.blocked.down || s.body.touching.down)) return false;
+        if (!this.playerAbove()) return false;
+        if (this.onLedgePlatform()) return false;
+        if (this._vaultCd > 0) return false;
+
+        const ledge = this.findVaultLedge();
+        if (!ledge) return false;
+
+        const tx = ledge.x;
+        const dx = tx - s.x;
+        if (Math.abs(dx) > ENEMY_VAULT_REACH) {
+            s.body.setVelocityX(Math.sign(dx) * Math.min(this.config.speed * 1.15, 150));
+            s.body.setVelocityY(0);
+            this.state = 'chase';
+            this.playAnim('walk');
+            return true;
+        }
+
+        this._vaulting = true;
+        this._hitOnce = false;
+        s.body.setVelocityY(ENEMY_VAULT_JUMP);
+        s.body.setVelocityX(Math.sign(player.x - s.x) * 90);
+        this.playAnim('walk');
+        return true;
+    }
+
     // These sheets have no jump. Walking off a roof dumps everyone onto the player.
     stayOnLedge() {
         const s = this.sprite;
-        if (this.dropping) return;
+        if (this.dropping || this._vaulting) return;
         if (!s.body || Math.abs(s.body.velocity.x) < 8) return;
         if (!(s.body.blocked.down || s.body.touching.down)) return;
         const dir = s.body.velocity.x > 0 ? 1 : -1;
@@ -1555,7 +1630,7 @@ class SheetEnemy extends Enemy {
             attackRange: def.range,
             fleeRange: def.kind === 'melee' ? 0 : 90,
             attackDur: Math.round((attackFrames / 12) * 1000),
-            attackCooldown: def.boss ? 1100 : def.kind === 'melee' ? 900 : 1600,
+            attackCooldown: def.boss ? 1400 : def.kind === 'melee' ? 1200 : 1900,
             dims: dims,
             anims: anims,
             kind: def.kind,
@@ -1618,11 +1693,15 @@ class SheetEnemy extends Enemy {
         if (this.state === 'attack') {
             this.attackTimer -= delta;
             this.playAnim('attack');
-            const hitAt = cfg.attackDur * 0.45;
-            if (this.attackTimer < hitAt && this.attackTimer > hitAt - delta - 8) this.checkHitPlayer();
+            const hitAt = cfg.attackDur * 0.30;
+            if (!this._hitOnce && this.attackTimer < hitAt && this.attackTimer > hitAt - delta - 12) {
+                this.checkHitPlayer();
+                this._hitOnce = true;
+            }
             if (this.attackTimer <= 0) {
                 this.state = 'idle';
                 this.attackCd = cfg.attackCooldown;
+                this._hitOnce = false;
                 this.releaseAttackSlot();
             }
             s.body.setVelocityX(0);
@@ -1633,6 +1712,7 @@ class SheetEnemy extends Enemy {
         } else if (dist < cfg.attackRange && this.attackCd <= 0 && (cfg.boss || this.isActiveAttacker())) {
             this.state = 'attack';
             this.attackTimer = cfg.attackDur;
+            this._hitOnce = false;
             this.playAnim('attack');
             s.body.setVelocityX(0);
         } else if (dist < cfg.chaseRange && (cfg.boss || this.isActiveAttacker())) {
@@ -1647,8 +1727,11 @@ class SheetEnemy extends Enemy {
         const s = this.sprite;
         const dx = player.x - s.x;
         const dist = Math.hypot(dx, player.y - s.y);
+        const horiz = Math.abs(dx);
         const cfg = this.config;
-        if (this.shootTimer > 0 && dist >= cfg.fleeRange) {
+        const above = this.playerAbove();
+        const canShootWindup = dist >= cfg.fleeRange || above;
+        if (this.shootTimer > 0 && canShootWindup) {
             this.shootTimer -= delta;
             this.playAnim('attack');
             s.body.setVelocityX(0);
@@ -1661,7 +1744,8 @@ class SheetEnemy extends Enemy {
             this.drawAim();
             return;
         }
-        if (dist < cfg.fleeRange) {
+        // Do not panic-flee when the samurai is on a ledge above — stand and aim up.
+        if (horiz < cfg.fleeRange && !above && this.playerBelow()) {
             this.shootTimer = 0;
             this.state = 'flee'; this.playAnim('walk');
             s.body.setVelocityX((dx > 0 ? -1 : 1) * cfg.speed * 1.25);
@@ -1713,7 +1797,7 @@ class SheetEnemy extends Enemy {
         let dx = player.x - ax;
         let dy = chestY - ay;
         const len = Math.hypot(dx, dy) || 1;
-        const speed = 460;
+        const speed = 400;
         const vx = (dx / len) * speed;
         const vy = (dy / len) * speed;
         // Tip sits on the right of the image. Rotation aims it; flip would turn it over.
