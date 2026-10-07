@@ -31,6 +31,10 @@ const SPECIAL_COST = 34; // full bar ≈ three leaps
 let specialLeapT = 0;
 let lastSpecialTarget = null;
 let enemyDropCooldown = 0;
+// Short buffers so presses during hitstop / a swing still land.
+let atkBuffer = 0, dashBuffer = 0, specialBuffer = 0, parryBuffer = 0;
+const INPUT_BUFFER_MS = 140;
+let slideIntentT = 0; // Down+X: don't fall through the ledge under the Kayma
 let slashGfx = [], emberTimer = 0, playerGlow;
 let coyoteTimer = 0, jumpBufferTimer = 0;
 let playerDead = false;
@@ -125,11 +129,12 @@ const DASH_SPEED = 900, DASH_DURATION = 150, DASH_COOLDOWN = 650;
 const COYOTE_TIME = 80, JUMP_BUFFER = 100;
 let COMBO_WINDOW = 800, HITSTOP_MS = 65;
 const PARRY_ACTIVE = 200, PARRY_TOTAL = 400, PARRY_CD = 600;
-const SPECIAL_WIND_MS = 90;
-const SPECIAL_TRAVEL_MS = 160;
-const SPECIAL_STRIKE_MS = 280;
+const SPECIAL_WIND_MS = 80;
+const SPECIAL_TRAVEL_MS = 150;
+const SPECIAL_STRIKE_MS = 170;
 const SPECIAL_LEAP_MS = SPECIAL_WIND_MS + SPECIAL_TRAVEL_MS + SPECIAL_STRIKE_MS;
 const SPECIAL_DMG = 40;
+const SPECIAL_CHAIN_CANCEL = 0.35; // fraction of strike after which C can leap again
 
 // ===================== SF/TMNT COMBO ATTACKS =====================
 // Hitboxes are measured from the feet. oy is upward.
@@ -652,11 +657,8 @@ function create() {
         if (hitTouchPad(pointer.x, pointer.y)) return;
         if (storyActive) { dismissStory(); return; }
         if (pointer.leftButtonDown() && !playerDead && !upgradeActive && !transitioning && !storyActive) {
-            const body = player.body;
-            const onGround = body.blocked.down || body.touching.down;
-            const mL = keys.A.isDown || cursors.left.isDown || touch.left;
-            const mR = keys.D.isDown || cursors.right.isDown || touch.right;
-            triggerAttack(mL || mR, onGround);
+            atkBuffer = INPUT_BUFFER_MS;
+            if (dropHeld()) slideIntentT = 160;
         }
     });
 
@@ -857,9 +859,16 @@ function sendReinforcement() {
 
 function checkAllEnemiesDead() {
     if (portalActive || transitioning || storyActive || upgradeActive) return;
-    if (reinforceQueue.length) sendReinforcement();
     const aliveCount = enemies.filter(e => !e.dead).length;
-    if (aliveCount === 0 && !reinforceQueue.length && enemies.length > 0) {
+    // Pull a reserve only when the floor has thinned — not on every kill.
+    if (reinforceQueue.length && aliveCount > 0 && aliveCount < MAX_ACTIVE_ATTACKERS) {
+        sendReinforcement();
+    }
+    if (aliveCount === 0 && reinforceQueue.length) {
+        sendReinforcement();
+    }
+    const still = enemies.filter(e => !e.dead).length;
+    if (still === 0 && !reinforceQueue.length && enemies.length > 0) {
         const room = ROOMS[currentRoom];
         if (room && room.final) showEnding();
         else openMysticPortal();
@@ -981,8 +990,8 @@ function showUpgradeSelection() {
     const upgrades = [
         { name: '刀 KATANA POWER', desc: 'Vurus hasari +8', color: 0xff4444, icon: '刀',
           apply: () => { katanaDmgBonus += 8; } },
-        { name: '連 COMBO MASTER', desc: 'Kombo penceresi +200ms\nHitstop +15ms', color: 0x44aaff, icon: '連',
-          apply: () => { COMBO_WINDOW += 200; HITSTOP_MS += 15; comboSpeedBonus += 1; } },
+        { name: '連 COMBO MASTER', desc: 'Kombo penceresi +200ms\nVuruşlar %12 hızlı', color: 0x44aaff, icon: '連',
+          apply: () => { COMBO_WINDOW += 200; comboSpeedBonus += 1; } },
         { name: '速 SPEED/AGILITY', desc: 'Hiz +60, Ziplama +40', color: 0x44ff88, icon: '速',
           apply: () => { MOVE_SPEED += 60; JUMP_FORCE -= 40; DOUBLE_JUMP_FORCE -= 30; moveSpeedBonus += 1; } }
     ];
@@ -1272,8 +1281,11 @@ class Enemy {
     takeDamage(dmg, dir, opts) {
         if (this.dead) return;
         const finalDmg = dmg + katanaDmgBonus;
-        this.hp -= finalDmg; this.hurtTimer = 200;
-        this.sprite.body.setVelocityX(dir * 300); this.sprite.body.setVelocityY(-100);
+        this.hp -= finalDmg;
+        // Short rehit lock so jabs can chain instead of bouncing off a long stun.
+        this.hurtTimer = (opts && opts.fromSpecial) ? 160 : 90;
+        this.sprite.body.setVelocityX(dir * ((opts && opts.fromSpecial) ? 340 : 220));
+        this.sprite.body.setVelocityY((opts && opts.fromSpecial) ? -140 : -70);
         playHitSound();
         // Damage number
         const txt = gameScene.add.text(this.sprite.x, this.headY() + 10, '-' + finalDmg, {
@@ -1367,7 +1379,24 @@ class Enemy {
             return;
         }
         this.updateAI(delta);
+        const vxBefore = s.body.velocity.x;
         this.stayOnLedge();
+        // Ledge-pinned chasers were holding party slots forever. Free the slot, then drop if the samurai is below.
+        if (this.state === 'chase' && Math.abs(vxBefore) > 8 && Math.abs(s.body.velocity.x) < 8
+            && (s.body.blocked.down || s.body.touching.down)) {
+            this._stuckT = (this._stuckT || 0) + delta;
+            if (this._stuckT > 320) {
+                this.releaseAttackSlot();
+                if (player.y > s.y + 55 && this.onLedgePlatform()) {
+                    this.dropping = true;
+                    this._dropPlat = null;
+                    s.body.setVelocityY(240);
+                }
+                this._stuckT = 0;
+            }
+        } else {
+            this._stuckT = 0;
+        }
         this.updateAnim(delta);
         this.drawHP();
     }
@@ -1809,7 +1838,7 @@ function createHUD(scene) {
     scene.comboText = scene.add.text(W/2, 150, '', { fontFamily: 'monospace', fontSize: '24px', color: '#fff', fontStyle: 'bold' }).setOrigin(0.5).setDepth(100).setAlpha(0).setScrollFactor(0);
     scene.parryText = scene.add.text(W/2, 118, '', { fontFamily: 'monospace', fontSize: '18px', color: '#00ffaa', fontStyle: 'bold' }).setOrigin(0.5).setDepth(100).setAlpha(0).setScrollFactor(0);
     scene.comboCountText = scene.add.text(W - 16, 50, '', { fontFamily: 'monospace', fontSize: '14px', color: '#ff8844', fontStyle: 'bold' }).setOrigin(1, 0).setDepth(100).setScrollFactor(0).setAlpha(0);
-    killCountText = scene.add.text(16, 52, '', { fontFamily: 'monospace', fontSize: '9px', color: '#666688' }).setDepth(100).setScrollFactor(0);
+    killCountText = scene.add.text(16, 52, '', { fontFamily: 'monospace', fontSize: '11px', color: '#c4b090' }).setDepth(100).setScrollFactor(0);
     drawPlayerHP();
 }
 
@@ -1817,9 +1846,14 @@ function chargeSpecial(amount) {
     if (playerDead || amount <= 0) return;
     const was = specialMeter;
     specialMeter = Math.min(SPECIAL_MAX, specialMeter + amount);
-    if (was < SPECIAL_MAX && specialMeter >= SPECIAL_MAX && gameScene && gameScene.parryText) {
-        gameScene.parryText.setText('ÖZEL HAZIR · C').setColor('#ffcc66').setAlpha(1).setScale(1.15);
-        gameScene.tweens.add({ targets: gameScene.parryText, alpha: 0, duration: 900, ease: 'Power2' });
+    if (gameScene && gameScene.parryText) {
+        if (was < SPECIAL_COST && specialMeter >= SPECIAL_COST) {
+            gameScene.parryText.setText('ÖZEL · C').setColor('#ffcc66').setAlpha(1).setScale(1.1);
+            gameScene.tweens.add({ targets: gameScene.parryText, alpha: 0, duration: 700, ease: 'Power2' });
+        } else if (was < SPECIAL_MAX && specialMeter >= SPECIAL_MAX) {
+            gameScene.parryText.setText('ÖZEL DOLU · C').setColor('#ffe088').setAlpha(1).setScale(1.2);
+            gameScene.tweens.add({ targets: gameScene.parryText, alpha: 0, duration: 900, ease: 'Power2' });
+        }
     }
     updateHUD();
 }
@@ -1996,6 +2030,21 @@ function tickSpecialLeap(delta) {
             player._chainHit = true;
             finishChainStrike();
         }
+        // After the cut lands, C can chain again without waiting out the full pose.
+        const strikeU = (elapsed - SPECIAL_WIND_MS - SPECIAL_TRAVEL_MS) / SPECIAL_STRIKE_MS;
+        if (player._chainHit && strikeU >= SPECIAL_CHAIN_CANCEL && specialMeter >= SPECIAL_COST
+            && (specialBuffer > 0 || Phaser.Input.Keyboard.JustDown(keys.C) || touch.special)) {
+            specialBuffer = 0;
+            touch.special = false;
+            specialLeapT = 0;
+            player._specialLeap = false;
+            player.body.allowGravity = true;
+            player.setAlpha(1);
+            player.clearTint();
+            player.setScale(SAM_SCALE);
+            triggerSpecialLeap();
+            return true;
+        }
     }
 
     if (specialLeapT <= 0) {
@@ -2034,12 +2083,13 @@ function drawPlayerHP() {
     g.fillStyle(0x0a0a1a, 0.85); g.fillRoundedRect(sx, sy, sw, sh, 4);
     g.lineStyle(1, specialMeter >= SPECIAL_COST ? 0xccaa55 : 0x443322, 0.7); g.strokeRoundedRect(sx, sy, sw, sh, 4);
     if (sFill > 0) {
-        const ready = specialMeter >= SPECIAL_MAX;
-        const col = ready ? 0xffcc44 : 0xc4882a;
-        g.fillStyle(col, ready ? 0.95 : 0.85); g.fillRoundedRect(sx + 2, sy + 2, sFill, sh - 4, 3);
-        if (ready) {
-            const pulse = 0.25 + Math.sin(Date.now() * 0.01) * 0.2;
-            g.lineStyle(1.5, 0xffe088, pulse); g.strokeRoundedRect(sx - 1, sy - 1, sw + 2, sh + 2, 5);
+        const canLeap = specialMeter >= SPECIAL_COST;
+        const full = specialMeter >= SPECIAL_MAX;
+        const col = full ? 0xffcc44 : canLeap ? 0xe0a030 : 0xc4882a;
+        g.fillStyle(col, full ? 0.95 : 0.85); g.fillRoundedRect(sx + 2, sy + 2, sFill, sh - 4, 3);
+        if (canLeap) {
+            const pulse = 0.2 + Math.sin(Date.now() * 0.01) * 0.18;
+            g.lineStyle(1.5, full ? 0xffe088 : 0xffcc66, pulse); g.strokeRoundedRect(sx - 1, sy - 1, sw + 2, sh + 2, 5);
         }
     }
     if (hpText) hpText.setText(Math.ceil(playerHP));
@@ -2232,7 +2282,29 @@ function update(time, delta) {
         if (comboDisplayTimer <= 0) { totalComboHits = 0; gameScene.comboCountText.setAlpha(0); }
     }
 
-    if (hitstopTimer > 0) { hitstopTimer -= delta; return; }
+    // Latch combat presses even during hitstop / swing so links don't eat inputs.
+    if (Phaser.Input.Keyboard.JustDown(keys.X) || touch.atk) {
+        atkBuffer = INPUT_BUFFER_MS;
+        if (dropHeld()) slideIntentT = 160;
+    }
+    touch.atk = false;
+    if (Phaser.Input.Keyboard.JustDown(keys.SHIFT) || touch.dash) dashBuffer = INPUT_BUFFER_MS;
+    touch.dash = false;
+    if (Phaser.Input.Keyboard.JustDown(keys.C) || touch.special) specialBuffer = INPUT_BUFFER_MS;
+    touch.special = false;
+    if (Phaser.Input.Keyboard.JustDown(keys.V) || touch.parry) parryBuffer = INPUT_BUFFER_MS;
+    touch.parry = false;
+    if (atkBuffer > 0) atkBuffer -= delta;
+    if (dashBuffer > 0) dashBuffer -= delta;
+    if (specialBuffer > 0) specialBuffer -= delta;
+    if (parryBuffer > 0) parryBuffer -= delta;
+    if (slideIntentT > 0) slideIntentT -= delta;
+
+    if (hitstopTimer > 0) {
+        hitstopTimer -= delta;
+        selectRoninFrame();
+        return;
+    }
 
     updatePartySystem();
     enemies.forEach(e => e.update(delta));
@@ -2259,8 +2331,11 @@ function update(time, delta) {
     }
 
     // C can cut into a leap even mid-swing once the meter has enough charge.
-    if (Phaser.Input.Keyboard.JustDown(keys.C) || touch.special) triggerSpecialLeap();
-    touch.special = false;
+    if (specialBuffer > 0) {
+        const before = specialLeapT;
+        triggerSpecialLeap();
+        if (specialLeapT > before || player._specialLeap) specialBuffer = 0;
+    }
     if (tickSpecialLeap(delta)) {
         selectRoninFrame();
         // showSamurai resets scale — reapply the wind-up squash after the frame pick.
@@ -2274,8 +2349,32 @@ function update(time, delta) {
     if (isAttacking) {
         attackTimer -= delta;
         if (player._slide) tickSlide(delta);
-        if (attackTimer <= 0) { isAttacking = false; player._slide = false; clearSlash(); }
-        else return;
+        // Late active frames for standing/air cuts — catch foes that walked in mid-swing.
+        if (!player._slide && !player._atkConnected && player._atkDur > 0) {
+            const p = 1 - attackTimer / player._atkDur;
+            if (p >= 0.28 && p <= 0.62) {
+                const dir = facingRight ? 1 : -1;
+                const atk = player._atkRef;
+                if (atk) {
+                    const hx = player.x + atk.hb.ox * dir, hy = player.y + atk.hb.oy;
+                    enemies.forEach(e => {
+                        if (e.dead || e.hurtTimer > 90) return;
+                        const hitRange = e.config && e.config.boss ? atk.hb.w + 30 : atk.hb.w;
+                        const hitH = e.config && e.config.boss ? atk.hb.h + 36 : atk.hb.h + 20;
+                        if (Math.abs(e.sprite.x - hx) < hitRange && Math.abs(e.sprite.y - hy) < hitH) {
+                            if (e.canTakeDamage(dir)) {
+                                e.takeDamage(atk.dmg, dir);
+                                player._atkConnected = true;
+                                hitstopTimer = Math.floor(HITSTOP_MS * 0.7);
+                            }
+                        }
+                    });
+                }
+            }
+        }
+        if (attackTimer <= 0) {
+            isAttacking = false; player._slide = false; player._atkRef = null; canAttack = true; clearSlash();
+        } else return;
     }
 
     const body = player.body;
@@ -2342,12 +2441,13 @@ function update(time, delta) {
         player._prevStep = step;
     }
 
-    if ((Phaser.Input.Keyboard.JustDown(keys.SHIFT) || touch.dash) && canDash && !isDashing) startDash(gameScene);
-    touch.dash = false;
-    if (Phaser.Input.Keyboard.JustDown(keys.X) || touch.atk) triggerAttack(isMoving, onGround);
-    touch.atk = false;
-    if (Phaser.Input.Keyboard.JustDown(keys.V) || touch.parry) triggerParry();
-    touch.parry = false;
+    if (dashBuffer > 0 && canDash && !isDashing) { dashBuffer = 0; startDash(gameScene); }
+    if (atkBuffer > 0) {
+        const before = isAttacking;
+        triggerAttack(isMoving, onGround);
+        if (isAttacking && !before) atkBuffer = 0;
+    }
+    if (parryBuffer > 0 && !isParrying) { parryBuffer = 0; triggerParry(); }
 }
 
 function spawnFootDust(scene, x, y) {
@@ -2377,25 +2477,29 @@ function spawnJumpPuff(scene, x, y) {
 //  Moving + X: DASH CUT | Down + X: KAYMA (low) | Air + X: AIR SLASH
 // ============================================================
 function triggerAttack(isMoving, onGround) {
-    if (!canAttack || isDashing || isParrying || playerHP <= 0 || playerDead || upgradeActive) return;
+    if (!canAttack || isDashing || isParrying || playerHP <= 0 || playerDead || upgradeActive || player._specialLeap) return;
     isAttacking = true; canAttack = false;
 
     const dir = facingRight ? 1 : -1;
     let atk, animName;
+    const speedMul = 1 + comboSpeedBonus * 0.12;
 
     player._slide = false;
+    player._atkConnected = false;
     if (!onGround) {
         atk = AIR_ATTACK;
         animName = atk.pose;
         comboStep = 0; comboTimer = 0;
-    } else if (dropHeld()) {
-        // Low cut only while Down/S is held. Walking + X stays a standing slash.
+    } else if (dropHeld() || slideIntentT > 0) {
+        // Low cut only while Down/S is held (or just pressed with X).
         atk = SLIDE_ATTACK;
         animName = atk.pose;
         comboStep = 0; comboTimer = 0;
         player._slide = true;
         player._slideHits = [];
         player._slideDust = 0;
+        slideIntentT = 0;
+        player._dropPlat = null;
         player.body.setVelocityY(Math.max(0, player.body.velocity.y));
     } else if (isMoving) {
         atk = RUN_ATTACK;
@@ -2410,8 +2514,10 @@ function triggerAttack(isMoving, onGround) {
     }
 
     playAnim(animName);
-    attackTimer = atk.dur;
-    player._atkDur = atk.dur;
+    const dur = Math.max(90, Math.round(atk.dur / speedMul));
+    attackTimer = dur;
+    player._atkDur = dur;
+    player._atkRef = atk;
     playSlashSound();
 
     const hx = player.x + atk.hb.ox * dir, hy = player.y + atk.hb.oy;
@@ -2430,7 +2536,7 @@ function triggerAttack(isMoving, onGround) {
         hitSomething = slideStrike();
     } else {
         enemies.forEach(e => {
-            if (e.dead || e.hurtTimer > 0) return;
+            if (e.dead || e.hurtTimer > 90) return;
             const hitRange = e.config && e.config.boss ? atk.hb.w + 30 : atk.hb.w;
             const hitH = e.config && e.config.boss ? atk.hb.h + 36 : atk.hb.h + 20;
             if (Math.abs(e.sprite.x - hx) < hitRange && Math.abs(e.sprite.y - hy) < hitH) {
@@ -2438,10 +2544,11 @@ function triggerAttack(isMoving, onGround) {
             }
         });
     }
+    player._atkConnected = hitSomething;
 
-    // Enhanced hitstop on contact (SF feel)
-    hitstopTimer = hitSomething ? HITSTOP_MS : Math.floor(HITSTOP_MS * 0.3);
-    gameScene.cameras.main.shake(hitSomething ? 100 : 60, atk.shake);
+    // Hitstop only on contact — whiffs stay snappy.
+    if (hitSomething) hitstopTimer = HITSTOP_MS;
+    gameScene.cameras.main.shake(hitSomething ? 100 : 40, hitSomething ? atk.shake : atk.shake * 0.4);
 
     // Show combo name
     const colors = ['#ccddff', '#aabbff', '#ff8899', '#ffaa44', '#ff3322'];
@@ -2449,8 +2556,7 @@ function triggerAttack(isMoving, onGround) {
     gameScene.comboText.setText(atk.name).setColor(colors[colorIdx]).setAlpha(1).setScale(comboStep >= 4 ? 1.5 : 1.1);
     gameScene.tweens.add({ targets: gameScene.comboText, alpha: 0, duration: 700, ease: 'Power2' });
 
-    gameScene.time.delayedCall(atk.dur + atk.cd, () => { canAttack = true; });
-    if (comboStep >= 5) gameScene.time.delayedCall(atk.dur + 50, () => resetCombo());
+    if (comboStep >= 5) gameScene.time.delayedCall(dur + 50, () => resetCombo());
 }
 
 function spawnEnergyWave(scene, x, y, atk, dir, step) {
@@ -2499,7 +2605,7 @@ function slideStrike() {
     let hit = false;
     if (!player._slideHits) player._slideHits = [];
     enemies.forEach(e => {
-        if (e.dead || e.hurtTimer > 0 || player._slideHits.indexOf(e) !== -1) return;
+        if (e.dead || e.hurtTimer > 90 || player._slideHits.indexOf(e) !== -1) return;
         if (Math.abs(e.sprite.x - hx) < 60 && Math.abs(e.sprite.y - player.y) < 46) {
             if (e.canTakeDamage(dir)) {
                 e.takeDamage(SLIDE_ATTACK.dmg, dir);
@@ -2588,8 +2694,8 @@ function dropHeld() {
 function roomThinned() {
     if (!totalEnemiesInRoom) return false;
     const left = enemies.filter(e => !e.dead).length + reinforceQueue.length;
-    // Only after the opening rush: a few bodies left, or under half the roster.
-    return left <= 3 || left <= Math.floor(totalEnemiesInRoom * 0.45);
+    // After the opening rush: a few bodies left, or under ~half the roster.
+    return left <= 4 || left <= Math.floor(totalEnemiesInRoom * 0.55);
 }
 
 function oneWay(obj, plat) {
@@ -2597,8 +2703,8 @@ function oneWay(obj, plat) {
     const ledge = plat.getData && plat.getData('ledge');
     if (ledge && obj === player) {
         // Hold down to keep falling through ledges. A tap still clears the one underfoot.
-        // Down+X is the low slide — stay on the ledge while that cut runs.
-        if (dropHeld() && !player._slide && obj.body.bottom <= plat.body.bottom + 4) {
+        // Down+X is the low slide — slideIntent covers the frame before _slide latches.
+        if (dropHeld() && !player._slide && !(slideIntentT > 0) && obj.body.bottom <= plat.body.bottom + 4) {
             player._dropPlat = plat;
             if (obj.body.velocity.y < 80) obj.body.setVelocityY(220);
             return false;
