@@ -75,6 +75,14 @@ let katanaDmgBonus = 0;
 let comboSpeedBonus = 0;
 let moveSpeedBonus = 0;
 
+// ===================== HEAL PICKUPS =====================
+let heals = [];
+let healSpawnTimers = [];
+const HEAL_MAX_ACTIVE = 2;
+const HEAL_PICK_R = 34;
+const HEAL_AMT_MIN = 18;
+const HEAL_AMT_MAX = 34;
+
 // ===================== AUDIO =====================
 let audioCtx = null;
 
@@ -180,6 +188,7 @@ function playBlockSound() { playSfx('sfx_block', 0.35); }
 function playArrowSound() { playSfx('sfx_arrow', 0.3); }
 function playPortalSound() { playSfx('sfx_portal', 0.45); }
 function playUpgradeSound() { playSfx('sfx_upgrade', 0.42); playSfx('sfx_ui', 0.3); }
+function playHealSound() { playSfx('sfx_ui2', 0.38); playSfx('sfx_upgrade', 0.22); }
 function playSlamSound() { playSfx('sfx_slam', 0.5); }
 function playDeathSound() { playSfx('sfx_death', 0.55); }
 function playSpecialSound() { playSfx('sfx_special', 0.4); }
@@ -764,6 +773,7 @@ function clearRoom() {
     enemies = [];
     projectiles.forEach(p => { if (p.gfx && p.gfx.scene) p.gfx.destroy(); });
     projectiles = [];
+    clearHeals();
     roomObjects.forEach(obj => { if (obj && obj.scene) obj.destroy(); });
     roomObjects = [];
     if (gameScene && gameScene._roomHits) {
@@ -929,6 +939,7 @@ function buildRoom(scene, roomName) {
     scene.cameras.main.removeBounds();
     scene.cameras.main.setScroll(0, 0);
     if (!storyActive) showRoomCard(room);
+    scheduleRoomHeals(scene, room);
 }
 
 // ============================================================
@@ -984,6 +995,183 @@ function sendReinforcement() {
     const e = spawnFoe(gameScene, id, fromLeft ? 90 : 1190, low ? 590 : 600);
     e.entering = fromLeft ? 1 : -1;
     return e;
+}
+
+function clearHeals() {
+    heals.forEach((h) => {
+        if (h.gfx && h.gfx.scene) h.gfx.destroy();
+        if (h.glow && h.glow.scene) h.glow.destroy();
+        if (h.ring && h.ring.scene) h.ring.destroy();
+    });
+    heals = [];
+    healSpawnTimers.forEach((t) => { if (t && t.remove) t.remove(false); });
+    healSpawnTimers = [];
+}
+
+function pickUncertainHealSpot() {
+    if (!platforms) return null;
+    const kids = platforms.getChildren().filter((p) => p && p.body && p.active);
+    if (!kids.length) return null;
+    // Prefer ledges / mid decks; sometimes the ground so it's still "somewhere".
+    const ledges = kids.filter((p) => p.body.width < 900);
+    const pool = (ledges.length && Math.random() < 0.82) ? ledges : kids;
+    const plat = Phaser.Utils.Array.GetRandom(pool);
+    const half = plat.body.width * 0.5;
+    // Bias toward platform edges / odd offsets — not dead center.
+    const edgeBias = Math.random() < 0.65 ? (Math.random() < 0.5 ? -1 : 1) : 0;
+    const jitter = edgeBias
+        ? edgeBias * (half * Phaser.Math.FloatBetween(0.45, 0.88))
+        : Phaser.Math.FloatBetween(-half * 0.55, half * 0.55);
+    const x = Phaser.Math.Clamp(plat.x + jitter, 50, W - 50);
+    const top = plat.y - plat.body.height * 0.5;
+    const y = top - Phaser.Math.Between(16, 28);
+    // Reject if almost on top of another heal.
+    for (let i = 0; i < heals.length; i++) {
+        if (Math.hypot(heals[i].x - x, heals[i].y - y) < 70) return null;
+    }
+    return { x, y };
+}
+
+function spawnHealPickup(scene, opts) {
+    if (!scene || !player || playerDead || storyActive || upgradeActive || transitioning) return null;
+    if (heals.length >= HEAL_MAX_ACTIVE) return null;
+    if (playerHP >= playerMaxHP && !(opts && opts.force)) return null;
+    const spot = pickUncertainHealSpot();
+    if (!spot) return null;
+    const amt = Phaser.Math.Between(HEAL_AMT_MIN, HEAL_AMT_MAX);
+    const glow = scene.add.circle(spot.x, spot.y, 16, 0xff6688, 0.22).setDepth(12)
+        .setBlendMode(Phaser.BlendModes.ADD);
+    const ring = scene.add.circle(spot.x, spot.y, 10, 0xffffff, 0).setDepth(12);
+    ring.setStrokeStyle(1.5, 0xffa0b0, 0.55);
+    let gfx;
+    if (scene.textures.exists('ui_heart')) {
+        gfx = scene.add.image(spot.x, spot.y, 'ui_heart').setDepth(13).setScale(1.7);
+    } else {
+        gfx = scene.add.circle(spot.x, spot.y, 7, 0xff4466, 0.95).setDepth(13);
+    }
+    // Soft blink so the spot stays a little uncertain until you notice it.
+    gfx.setAlpha(0.35);
+    scene.tweens.add({
+        targets: [gfx, glow, ring],
+        alpha: { from: 0.25, to: 1 },
+        duration: 700,
+        yoyo: true,
+        repeat: 2,
+        ease: 'Sine.easeInOut',
+        onComplete: () => {
+            if (gfx.active) gfx.setAlpha(1);
+            if (glow.active) glow.setAlpha(0.28);
+            if (ring.active) ring.setAlpha(1);
+        }
+    });
+    scene.tweens.add({
+        targets: [gfx, glow, ring],
+        y: spot.y - 7,
+        duration: 900,
+        yoyo: true,
+        repeat: -1,
+        ease: 'Sine.easeInOut'
+    });
+    const heal = { x: spot.x, y: spot.y, amt, gfx, glow, ring, life: 22000, bob: 0 };
+    heals.push(heal);
+    return heal;
+}
+
+function scheduleRoomHeals(scene, room) {
+    clearHeals();
+    if (!scene || !room) return;
+    // First drip after the room settles — not always, not always soon.
+    if (Math.random() < 0.7) {
+        healSpawnTimers.push(scene.time.delayedCall(Phaser.Math.Between(2800, 7000), () => {
+            spawnHealPickup(scene);
+        }));
+    }
+    // A later, rarer second chance while the fight is still going.
+    if (Math.random() < 0.45) {
+        healSpawnTimers.push(scene.time.delayedCall(Phaser.Math.Between(12000, 22000), () => {
+            if (playerHP < playerMaxHP * 0.85) spawnHealPickup(scene);
+        }));
+    }
+    // Boss / mini-boss rooms get a slightly kinder mid-fight roll.
+    if (room.final || (room.foes && room.foes.some(([id]) => CAST[id] && (CAST[id].boss || CAST[id].miniBoss)))) {
+        healSpawnTimers.push(scene.time.delayedCall(Phaser.Math.Between(8000, 14000), () => {
+            if (playerHP < playerMaxHP * 0.55) spawnHealPickup(scene, { force: true });
+        }));
+    }
+}
+
+function maybeDropHealOnKill(scene) {
+    if (!scene || playerHP >= playerMaxHP) return;
+    // Uncertain drop — not every kill, more likely when hurt.
+    const hurtFactor = 1 - (playerHP / playerMaxHP);
+    const chance = 0.08 + hurtFactor * 0.22;
+    if (Math.random() < chance) spawnHealPickup(scene);
+}
+
+function collectHeal(heal) {
+    if (!heal || !gameScene) return;
+    const before = playerHP;
+    playerHP = Math.min(playerMaxHP, playerHP + heal.amt);
+    const gained = Math.ceil(playerHP - before);
+    playHealSound();
+    updateHUD();
+    if (heal.gfx && heal.gfx.scene) {
+        gameScene.tweens.add({
+            targets: [heal.gfx, heal.glow, heal.ring].filter(Boolean),
+            y: heal.y - 40, alpha: 0, scale: 1.8, duration: 280,
+            onComplete: () => {
+                if (heal.gfx && heal.gfx.destroy) heal.gfx.destroy();
+                if (heal.glow && heal.glow.destroy) heal.glow.destroy();
+                if (heal.ring && heal.ring.destroy) heal.ring.destroy();
+            }
+        });
+    }
+    const txt = gameScene.add.text(heal.x, heal.y - 20, '+' + gained, {
+        fontFamily: 'monospace', fontSize: '14px', color: '#66ff99', fontStyle: 'bold'
+    }).setOrigin(0.5).setDepth(40);
+    gameScene.tweens.add({ targets: txt, y: txt.y - 28, alpha: 0, duration: 700, onComplete: () => txt.destroy() });
+    for (let i = 0; i < 8; i++) {
+        const a = (i / 8) * Math.PI * 2;
+        const sp = gameScene.add.circle(heal.x, heal.y, 2, 0xff8899, 0.9).setDepth(14);
+        gameScene.tweens.add({
+            targets: sp,
+            x: heal.x + Math.cos(a) * 28,
+            y: heal.y + Math.sin(a) * 28 - 10,
+            alpha: 0, duration: 320, onComplete: () => sp.destroy()
+        });
+    }
+}
+
+function tickHeals(delta) {
+    if (!player || playerDead || storyActive || upgradeActive || transitioning) return;
+    for (let i = heals.length - 1; i >= 0; i--) {
+        const h = heals[i];
+        h.life -= delta;
+        if (h.life <= 0) {
+            if (h.gfx && h.gfx.scene) {
+                gameScene.tweens.add({
+                    targets: [h.gfx, h.glow, h.ring].filter(Boolean),
+                    alpha: 0, duration: 400,
+                    onComplete: () => {
+                        if (h.gfx && h.gfx.destroy) h.gfx.destroy();
+                        if (h.glow && h.glow.destroy) h.glow.destroy();
+                        if (h.ring && h.ring.destroy) h.ring.destroy();
+                    }
+                });
+            }
+            heals.splice(i, 1);
+            continue;
+        }
+        // Fade warn near expiry
+        if (h.life < 4000 && h.gfx) {
+            h.gfx.setAlpha(0.35 + 0.65 * Math.abs(Math.sin(h.life * 0.012)));
+        }
+        const dx = player.x - h.x, dy = (player.y - 20) - h.y;
+        if (dx * dx + dy * dy < HEAL_PICK_R * HEAL_PICK_R) {
+            heals.splice(i, 1);
+            collectHeal(h);
+        }
+    }
 }
 
 function checkAllEnemiesDead() {
@@ -1669,6 +1857,7 @@ class Enemy {
         });
         const kt = gameScene.add.text(s.x, s.y - 40, 'SLAIN', { fontFamily: 'monospace', fontSize: '12px', color: '#ff6644', fontStyle: 'bold' }).setOrigin(0.5).setDepth(30);
         gameScene.tweens.add({ targets: kt, y: kt.y - 30, alpha: 0, duration: 1000, onComplete: () => kt.destroy() });
+        maybeDropHealOnKill(gameScene);
         // Check if all enemies dead -> open portal
         gameScene.time.delayedCall(500, () => checkAllEnemiesDead());
     }
@@ -2638,6 +2827,7 @@ function update(time, delta) {
     if (transitioning || upgradeActive || storyActive) return;
 
     tickRoomAtmosphere(gameScene, delta);
+    tickHeals(delta);
     if (playerGlow) playerGlow.setPosition(player.x, player.y - 48);
 
     if (playerHurtTimer > 0) {
