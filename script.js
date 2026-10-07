@@ -546,7 +546,7 @@ const ROOMS = {
     },
     night: {
         title: 'Gece İç Avlu',
-        line: 'Vampirler zeminde. Kunoichi yan raylarda. Can barını doldur, C ile zincirle.',
+        line: 'Vampirler zeminde. Kunoichi yan raylarda. Özel barı doldur, C ile zincirle.',
         bg: 'bg_castle', crop: CASTLE_CROP, tint: 0x6677aa, layout: 'night',
         spawn: { x: 200, y: 590 },
         portal: { x: 1000, y: 530, w: 80, h: 50 },
