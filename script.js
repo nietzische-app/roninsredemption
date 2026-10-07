@@ -107,7 +107,9 @@ const SAMURAI = {
     upper:{ key: 'samurai_atk', frames: [1, 2, 3, 4, 5, 6] },
     heavy:{ key: 'samurai_atk', frames: [0, 1, 2, 3, 4, 5, 6] },
     runattack: { key: 'samurai_atk', frames: [2, 3, 4, 5, 6] },
-    airattack: { key: 'samurai_atk', frames: [2, 3, 4, 5, 6] }
+    airattack: { key: 'samurai_atk', frames: [2, 3, 4, 5, 6] },
+    // Chain leap: dash frames for the dash, atk frames for the cut (picked in selectRoninFrame).
+    chain: { key: 'samurai_dash', frames: [2, 4, 6, 8, 10, 12] }
 };
 let playerShadow = null;
 const ENEMY_HEIGHT = BIT_H * BIT_SCALE;
@@ -123,7 +125,10 @@ const DASH_SPEED = 900, DASH_DURATION = 150, DASH_COOLDOWN = 650;
 const COYOTE_TIME = 80, JUMP_BUFFER = 100;
 let COMBO_WINDOW = 800, HITSTOP_MS = 65;
 const PARRY_ACTIVE = 200, PARRY_TOTAL = 400, PARRY_CD = 600;
-const SPECIAL_LEAP_MS = 260;
+const SPECIAL_WIND_MS = 90;
+const SPECIAL_TRAVEL_MS = 160;
+const SPECIAL_STRIKE_MS = 280;
+const SPECIAL_LEAP_MS = SPECIAL_WIND_MS + SPECIAL_TRAVEL_MS + SPECIAL_STRIKE_MS;
 const SPECIAL_DMG = 40;
 
 // ===================== SF/TMNT COMBO ATTACKS =====================
@@ -1801,6 +1806,78 @@ function pickSpecialTarget() {
     return best;
 }
 
+function spawnChainGhost(x, y, dir) {
+    if (!gameScene || !player) return;
+    const ghost = gameScene.add.sprite(x, y, player.texture.key, player.frame.name)
+        .setOrigin(SAM_OX / SAM_W, SAM_OY / SAM_H)
+        .setScale(SAM_SCALE)
+        .setFlipX(dir < 0)
+        .setTint(0xffe088)
+        .setAlpha(0.55)
+        .setDepth(11);
+    gameScene.tweens.add({
+        targets: ghost, alpha: 0, scaleX: SAM_SCALE * 1.08, scaleY: SAM_SCALE * 0.92,
+        duration: 180, ease: 'Power2', onComplete: () => ghost.destroy()
+    });
+}
+
+function spawnChainBurst(x, y, dir) {
+    if (!gameScene) return;
+    const ring = gameScene.add.graphics().setDepth(14);
+    ring.lineStyle(3, 0xffe088, 0.85);
+    ring.strokeCircle(x, y - 40, 18);
+    ring.lineStyle(1.5, 0xffffff, 0.7);
+    ring.strokeCircle(x, y - 40, 28);
+    gameScene.tweens.add({
+        targets: ring, alpha: 0, scaleX: 2.4, scaleY: 2.4,
+        duration: 260, ease: 'Cubic.easeOut', onComplete: () => ring.destroy()
+    });
+    for (let i = 0; i < 8; i++) {
+        const a = (i / 8) * Math.PI * 2;
+        const px = x + Math.cos(a) * 10;
+        const py = y - 40 + Math.sin(a) * 10;
+        const sp = gameScene.add.circle(px, py, Phaser.Math.Between(2, 4), i % 2 ? 0xffe088 : 0xffffff, 0.95).setDepth(15);
+        gameScene.tweens.add({
+            targets: sp,
+            x: px + Math.cos(a) * Phaser.Math.Between(36, 70) * (0.6 + Math.abs(dir) * 0.2),
+            y: py + Math.sin(a) * Phaser.Math.Between(20, 50) - 10,
+            alpha: 0, duration: 280, ease: 'Power2', onComplete: () => sp.destroy()
+        });
+    }
+}
+
+function finishChainStrike() {
+    const target = player._chainTarget;
+    const dir = player._chainDir || 1;
+    if (!target || target.dead || !target.sprite) return;
+    playSlashSound();
+    const hx = player.x + 54 * dir;
+    const hy = player.y - 52;
+    // Gold-tinted heavy cut, bigger than a normal slash.
+    const atk = {
+        trail: { sa: -40, ea: 55, r: 72, w: 10 },
+        hb: ATTACKS[4].hb
+    };
+    clearSlash();
+    const g = gameScene.add.graphics().setDepth(15);
+    slashGfx.push(g);
+    const sa = Phaser.Math.DegToRad(atk.trail.sa * dir);
+    const ea = Phaser.Math.DegToRad(atk.trail.ea * dir);
+    const ccw = dir < 0;
+    g.lineStyle(16, 0xffaa22, 0.18); g.beginPath(); g.arc(hx, hy, atk.trail.r + 10, sa, ea, ccw); g.strokePath();
+    g.lineStyle(8, 0xffe088, 0.75); g.beginPath(); g.arc(hx, hy, atk.trail.r, sa, ea, ccw); g.strokePath();
+    g.lineStyle(3, 0xffffff, 1); g.beginPath(); g.arc(hx, hy, atk.trail.r - 4, sa, ea, ccw); g.strokePath();
+    gameScene.tweens.add({ targets: g, alpha: 0, duration: 280, ease: 'Power2', onComplete: () => g.destroy() });
+    spawnBladeParticles(gameScene, hx, hy, dir, 4);
+    spawnChainBurst(player.x, player.y, dir);
+    target.takeDamage(SPECIAL_DMG, dir, { fromSpecial: true });
+    gameScene.cameras.main.shake(110, 0.008);
+    if (gameScene.comboText) {
+        gameScene.comboText.setText('ZİNCİR').setColor('#ffcc66').setAlpha(1).setScale(1.35);
+        gameScene.tweens.add({ targets: gameScene.comboText, alpha: 0, duration: 550, ease: 'Power2' });
+    }
+}
+
 function triggerSpecialLeap() {
     if (!player || playerDead || playerDeadFrozen || upgradeActive || storyActive || transitioning) return;
     if (specialLeapT > 0 || isParrying || isDashing) return;
@@ -1812,6 +1889,8 @@ function triggerSpecialLeap() {
     lastSpecialTarget = target;
     specialLeapT = SPECIAL_LEAP_MS;
     player._specialLeap = true;
+    player._chainHit = false;
+    player._chainGhostT = 0;
     isAttacking = false;
     player._slide = false;
     canAttack = false;
@@ -1819,32 +1898,30 @@ function triggerSpecialLeap() {
 
     const dir = target.sprite.x >= player.x ? 1 : -1;
     facingRight = dir > 0;
-    const fromX = player.x, fromY = player.y - 40;
-    const landX = Phaser.Math.Clamp(target.sprite.x - dir * 42, 40, W - 40);
-    const landY = target.sprite.y;
-    player.setPosition(landX, landY);
+    player._chainDir = dir;
+    player._chainTarget = target;
+    player._chainFromX = player.x;
+    player._chainFromY = player.y;
+    player._chainToX = Phaser.Math.Clamp(target.sprite.x - dir * 44, 40, W - 40);
+    player._chainToY = target.sprite.y;
+
     player.body.setVelocity(0, 0);
     player.body.allowGravity = false;
     player.setFlipX(!facingRight);
-    playAnim('heavy');
-    playSlashSound();
+    player.setAlpha(1);
+    player.setTint(0xffe8a0);
+    player._atkDur = SPECIAL_LEAP_MS;
+    playAnim('chain');
+    player.currentAnim = 'chain';
+    selectRoninFrame();
 
-    const trail = gameScene.add.graphics().setDepth(14);
-    trail.lineStyle(3, 0xffdd88, 0.75);
-    trail.lineBetween(fromX, fromY, landX, landY - 40);
-    trail.lineStyle(1.5, 0xffffff, 0.9);
-    trail.lineBetween(fromX, fromY, landX, landY - 40);
-    gameScene.tweens.add({ targets: trail, alpha: 0, duration: 220, onComplete: () => trail.destroy() });
+    // Departure mark — a short gold pulse where he leaves.
+    spawnChainBurst(player._chainFromX, player._chainFromY, dir);
+    const aim = gameScene.add.graphics().setDepth(13);
+    aim.lineStyle(2, 0xffe088, 0.5);
+    aim.lineBetween(player._chainFromX, player._chainFromY - 44, player._chainToX, player._chainToY - 44);
+    gameScene.tweens.add({ targets: aim, alpha: 0, duration: SPECIAL_WIND_MS + SPECIAL_TRAVEL_MS, onComplete: () => aim.destroy() });
 
-    const hx = player.x + 50 * dir, hy = player.y - 48;
-    drawBladeTrail(gameScene, hx, hy, ATTACKS[4], dir, 4);
-    spawnBladeParticles(gameScene, hx, hy, dir, 4);
-    target.takeDamage(SPECIAL_DMG, dir, { fromSpecial: true });
-    gameScene.cameras.main.shake(90, 0.006);
-    if (gameScene.comboText) {
-        gameScene.comboText.setText('ZİNCİR').setColor('#ffcc66').setAlpha(1).setScale(1.25);
-        gameScene.tweens.add({ targets: gameScene.comboText, alpha: 0, duration: 500, ease: 'Power2' });
-    }
     gameScene.time.delayedCall(SPECIAL_LEAP_MS + 40, () => { canAttack = true; });
     updateHUD();
 }
@@ -1852,12 +1929,53 @@ function triggerSpecialLeap() {
 function tickSpecialLeap(delta) {
     if (specialLeapT <= 0) return false;
     specialLeapT -= delta;
+    const elapsed = SPECIAL_LEAP_MS - Math.max(0, specialLeapT);
     player.body.setVelocity(0, 0);
-    playAnim('heavy');
+    player.body.allowGravity = false;
+    player.setFlipX(player._chainDir < 0);
+
+    if (elapsed < SPECIAL_WIND_MS) {
+        // Wind-up: crouch in place, gold tint.
+        player.setPosition(player._chainFromX, player._chainFromY);
+        player.setAlpha(1);
+        player.setTint(0xffe8a0);
+        player.setScale(SAM_SCALE * 1.02, SAM_SCALE * 0.94);
+    } else if (elapsed < SPECIAL_WIND_MS + SPECIAL_TRAVEL_MS) {
+        // Travel: arc across to the foe with afterimages.
+        const u = (elapsed - SPECIAL_WIND_MS) / SPECIAL_TRAVEL_MS;
+        const e = u * u * (3 - 2 * u);
+        const x = Phaser.Math.Linear(player._chainFromX, player._chainToX, e);
+        const y = Phaser.Math.Linear(player._chainFromY, player._chainToY, e) - Math.sin(e * Math.PI) * 56;
+        player.setPosition(x, y);
+        player.setScale(SAM_SCALE);
+        player.setAlpha(0.45 + 0.55 * Math.sin(u * Math.PI));
+        player.setTint(0xfff0c0);
+        player._chainGhostT -= delta;
+        if (player._chainGhostT <= 0) {
+            spawnChainGhost(x, y, player._chainDir);
+            player._chainGhostT = 26;
+        }
+    } else {
+        // Strike: land beside the foe and cut once.
+        player.setPosition(player._chainToX, player._chainToY);
+        player.setScale(SAM_SCALE);
+        player.setAlpha(1);
+        player.clearTint();
+        if (!player._chainHit) {
+            player._chainHit = true;
+            finishChainStrike();
+        }
+    }
+
     if (specialLeapT <= 0) {
         player._specialLeap = false;
+        player._chainTarget = null;
         player.body.allowGravity = true;
+        player.setAlpha(1);
+        player.clearTint();
+        player.setScale(SAM_SCALE);
         if (specialMeter < SPECIAL_COST) lastSpecialTarget = null;
+        playAnim('idle');
     }
     return true;
 }
@@ -1931,12 +2049,27 @@ function showSamurai(key, frame) {
 
 function selectRoninFrame() {
     if (!player) return;
-    if (player._hurtPose > 0 && !playerDead) {
+    if (player._hurtPose > 0 && !playerDead && !player._specialLeap) {
         showSamurai(SAMURAI.hurt.key, SAMURAI.hurt.frames[0]);
         player.clearTint();
         return;
     }
     const anim = player.currentAnim || 'idle';
+    if (anim === 'chain' && player._specialLeap) {
+        const elapsed = SPECIAL_LEAP_MS - Math.max(0, specialLeapT);
+        if (elapsed < SPECIAL_WIND_MS) {
+            showSamurai('samurai_dash', 2);
+        } else if (elapsed < SPECIAL_WIND_MS + SPECIAL_TRAVEL_MS) {
+            const u = (elapsed - SPECIAL_WIND_MS) / SPECIAL_TRAVEL_MS;
+            const frames = SAMURAI.chain.frames;
+            showSamurai('samurai_dash', frames[Math.min(frames.length - 1, Math.floor(u * frames.length))]);
+        } else {
+            const u = (elapsed - SPECIAL_WIND_MS - SPECIAL_TRAVEL_MS) / SPECIAL_STRIKE_MS;
+            const frames = [2, 3, 4, 5, 6];
+            showSamurai('samurai_atk', frames[Math.min(frames.length - 1, Math.floor(Math.max(0, u) * frames.length))]);
+        }
+        return;
+    }
     if (anim === 'death' && player._deathT0) {
         const slotD = SAMURAI.death;
         const now = performance.now();
@@ -2099,6 +2232,11 @@ function update(time, delta) {
     touch.special = false;
     if (tickSpecialLeap(delta)) {
         selectRoninFrame();
+        // showSamurai resets scale — reapply the wind-up squash after the frame pick.
+        const elapsed = SPECIAL_LEAP_MS - Math.max(0, specialLeapT);
+        if (player._specialLeap && elapsed < SPECIAL_WIND_MS) {
+            player.setScale(SAM_SCALE * 1.06, SAM_SCALE * 0.9);
+        }
         return;
     }
 
