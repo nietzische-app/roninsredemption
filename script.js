@@ -75,9 +75,16 @@ let katanaDmgBonus = 0;
 let comboSpeedBonus = 0;
 let moveSpeedBonus = 0;
 
+// ===================== HEAL PICKUPS =====================
+let heals = [];
+let healSpawnTimers = [];
+const HEAL_MAX_ACTIVE = 2;
+const HEAL_PICK_R = 34;
+const HEAL_AMT_MIN = 18;
+const HEAL_AMT_MAX = 34;
+
 // ===================== AUDIO =====================
 let audioCtx = null;
-let slashAudio = null, bgmAudio = null;
 
 // ===================== HUD =====================
 let hpBarGfx, hpText;
@@ -153,79 +160,58 @@ const AIR_ATTACK = { name: 'AIR SLASH', pose: 'airattack', dur: 200, cd: 60, hb:
 // ============================================================
 //  AUDIO
 // ============================================================
+// Local Kenney CC0 SFX + short synthesized room loops (see audio/LICENSE.txt).
+let soundReady = false;
+let bgmSound = null;
+let currentBgmKey = null;
+const SFX_KEYS = [
+    'sfx_slash', 'sfx_slash2', 'sfx_slash3', 'sfx_hit', 'sfx_hit2', 'sfx_hit_heavy',
+    'sfx_hurt', 'sfx_dash', 'sfx_parry', 'sfx_block', 'sfx_arrow', 'sfx_portal',
+    'sfx_upgrade', 'sfx_death', 'sfx_slam', 'sfx_ui', 'sfx_ui2', 'sfx_special', 'sfx_foot'
+];
 function initAudio() {
     try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {}
-    slashAudio = new Audio('https://actions.google.com/sounds/v1/science_fiction/swish_vroom.ogg');
-    slashAudio.volume = 0.4; slashAudio.load();
-    bgmAudio = new Audio('https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3');
-    bgmAudio.volume = 0.12; bgmAudio.loop = true; bgmAudio.load();
+    soundReady = !!(gameScene && gameScene.sound);
 }
-function playSlashSound() { if (slashAudio) { const s = slashAudio.cloneNode(); s.volume = 0.3 + Math.random() * 0.15; s.play().catch(() => {}); } }
-function playHitSound() {
-    if (!audioCtx) return; const t = audioCtx.currentTime;
-    const osc = audioCtx.createOscillator(); osc.type = 'sine'; osc.frequency.setValueAtTime(150, t); osc.frequency.exponentialRampToValueAtTime(40, t + 0.15);
-    const g = audioCtx.createGain(); g.gain.setValueAtTime(0.4, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
-    osc.connect(g).connect(audioCtx.destination); osc.start(t); osc.stop(t + 0.15);
+function playSfx(key, vol) {
+    if (!gameScene || !gameScene.sound || !gameScene.cache.audio.exists(key)) return;
+    try { gameScene.sound.play(key, { volume: vol == null ? 0.35 : vol }); } catch (e) {}
 }
-function playHurtSound() {
-    if (!audioCtx) return; const t = audioCtx.currentTime;
-    const osc = audioCtx.createOscillator(); osc.type = 'sawtooth'; osc.frequency.setValueAtTime(400, t); osc.frequency.exponentialRampToValueAtTime(100, t + 0.25);
-    const g = audioCtx.createGain(); g.gain.setValueAtTime(0.15, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.25);
-    osc.connect(g).connect(audioCtx.destination); osc.start(t); osc.stop(t + 0.25);
+function playSlashSound() {
+    const keys = ['sfx_slash', 'sfx_slash2', 'sfx_slash3'];
+    playSfx(keys[(Math.random() * keys.length) | 0], 0.28 + Math.random() * 0.12);
 }
-function playDashSound() {
-    if (!audioCtx) return; const t = audioCtx.currentTime; const dur = 0.1;
-    const buf = audioCtx.createBuffer(1, audioCtx.sampleRate * dur, audioCtx.sampleRate); const data = buf.getChannelData(0);
-    for (let i = 0; i < data.length; i++) data[i] = (Math.random() * 2 - 1) * Math.sin((i / data.length) * Math.PI) * 0.8;
-    const src = audioCtx.createBufferSource(); src.buffer = buf;
-    const bp = audioCtx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 1500; bp.Q.value = 0.5;
-    const g = audioCtx.createGain(); g.gain.setValueAtTime(0.2, t);
-    src.connect(bp).connect(g).connect(audioCtx.destination); src.start(t); src.stop(t + dur);
-}
-function playBlockSound() {
-    if (!audioCtx) return; const t = audioCtx.currentTime;
-    const osc = audioCtx.createOscillator(); osc.type = 'square'; osc.frequency.setValueAtTime(800, t); osc.frequency.exponentialRampToValueAtTime(200, t + 0.08);
-    const g = audioCtx.createGain(); g.gain.setValueAtTime(0.25, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.1);
-    osc.connect(g).connect(audioCtx.destination); osc.start(t); osc.stop(t + 0.1);
-}
-function playArrowSound() {
-    if (!audioCtx) return; const t = audioCtx.currentTime; const dur = 0.15;
-    const buf = audioCtx.createBuffer(1, audioCtx.sampleRate * dur, audioCtx.sampleRate); const data = buf.getChannelData(0);
-    for (let i = 0; i < data.length; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / data.length) * 0.3;
-    const src = audioCtx.createBufferSource(); src.buffer = buf;
-    const hp = audioCtx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 4000;
-    const g = audioCtx.createGain(); g.gain.setValueAtTime(0.2, t);
-    src.connect(hp).connect(g).connect(audioCtx.destination); src.start(t); src.stop(t + dur);
-}
-function playPortalSound() {
-    if (!audioCtx) return; const t = audioCtx.currentTime;
-    [220, 330, 440, 550].forEach((freq, i) => {
-        const osc = audioCtx.createOscillator(); osc.type = 'sine';
-        osc.frequency.setValueAtTime(freq, t + i * 0.12);
-        const g = audioCtx.createGain(); g.gain.setValueAtTime(0.15, t + i * 0.12); g.gain.exponentialRampToValueAtTime(0.001, t + i * 0.12 + 0.4);
-        osc.connect(g).connect(audioCtx.destination); osc.start(t + i * 0.12); osc.stop(t + i * 0.12 + 0.4);
-    });
-}
-function playUpgradeSound() {
-    if (!audioCtx) return; const t = audioCtx.currentTime;
-    const osc = audioCtx.createOscillator(); osc.type = 'triangle'; osc.frequency.setValueAtTime(440, t); osc.frequency.exponentialRampToValueAtTime(880, t + 0.3);
-    const g = audioCtx.createGain(); g.gain.setValueAtTime(0.2, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.5);
-    osc.connect(g).connect(audioCtx.destination); osc.start(t); osc.stop(t + 0.5);
-}
-function playSlamSound() {
-    if (!audioCtx) return; const t = audioCtx.currentTime;
-    const osc = audioCtx.createOscillator(); osc.type = 'sine'; osc.frequency.setValueAtTime(80, t); osc.frequency.exponentialRampToValueAtTime(20, t + 0.4);
-    const g = audioCtx.createGain(); g.gain.setValueAtTime(0.6, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.4);
-    osc.connect(g).connect(audioCtx.destination); osc.start(t); osc.stop(t + 0.4);
-}
-function playDeathSound() {
-    if (!audioCtx) return; const t = audioCtx.currentTime;
-    const osc = audioCtx.createOscillator(); osc.type = 'sine'; osc.frequency.setValueAtTime(60, t); osc.frequency.exponentialRampToValueAtTime(30, t + 1.5);
-    const g = audioCtx.createGain(); g.gain.setValueAtTime(0.5, t); g.gain.exponentialRampToValueAtTime(0.001, t + 1.5);
-    osc.connect(g).connect(audioCtx.destination); osc.start(t); osc.stop(t + 1.5);
-}
+function playHitSound() { playSfx(Math.random() < 0.35 ? 'sfx_hit_heavy' : (Math.random() < 0.5 ? 'sfx_hit' : 'sfx_hit2'), 0.4); }
+function playHurtSound() { playSfx('sfx_hurt', 0.38); }
+function playDashSound() { playSfx('sfx_dash', 0.32); }
+function playBlockSound() { playSfx('sfx_block', 0.35); }
+function playArrowSound() { playSfx('sfx_arrow', 0.3); }
+function playPortalSound() { playSfx('sfx_portal', 0.45); }
+function playUpgradeSound() { playSfx('sfx_upgrade', 0.42); playSfx('sfx_ui', 0.3); }
+function playHealSound() { playSfx('sfx_ui2', 0.38); playSfx('sfx_upgrade', 0.22); }
+function playSlamSound() { playSfx('sfx_slam', 0.5); }
+function playDeathSound() { playSfx('sfx_death', 0.55); }
+function playSpecialSound() { playSfx('sfx_special', 0.4); }
+function playParrySound() { playSfx('sfx_parry', 0.45); }
 let bgmStarted = false;
-function startBGM() { if (bgmStarted || !bgmAudio) return; bgmStarted = true; bgmAudio.play().catch(() => { bgmStarted = false; }); }
+function startBGM() {
+    if (bgmStarted) return;
+    bgmStarted = true;
+    if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
+    if (gameScene && gameScene.sound && gameScene.sound.context && gameScene.sound.context.state === 'suspended') {
+        gameScene.sound.context.resume().catch(() => {});
+    }
+    setRoomBgm(ROOMS[currentRoom] && ROOMS[currentRoom].bgm);
+}
+function setRoomBgm(key) {
+    if (!key || !gameScene || !gameScene.sound) return;
+    if (!gameScene.cache.audio.exists(key)) return;
+    if (currentBgmKey === key && bgmSound && bgmSound.isPlaying) return;
+    if (bgmSound) { try { bgmSound.stop(); bgmSound.destroy(); } catch (e) {} bgmSound = null; }
+    currentBgmKey = key;
+    bgmSound = gameScene.sound.add(key, { loop: true, volume: 0.16 });
+    try { bgmSound.play(); } catch (e) { bgmStarted = false; }
+}
 
 // ============================================================
 //  SPRITE SHEET — gap slice, chroma key, shared foot anchor
@@ -467,7 +453,6 @@ const FOE_HEIGHT = 188; // a touch taller than the samurai, not a tower
 const CAST = {
     fighter:    { label: 'YUMRUKÇU', color: '#e07040', ox: 62, head: 46, hp: 100, speed: 150, range: 64,  dmg: 14, kind: 'melee',  frames: { idle: 6, walk: 8,  attack: 4,  dead: 3 } },
     shinobi:    { label: 'SHINOBI',  color: '#88aacc', ox: 66, head: 49, hp: 75,  speed: 210, range: 62,  dmg: 16, kind: 'melee',  frames: { idle: 6, walk: 8,  attack: 5,  dead: 4 } },
-    commander:  { label: 'KOMUTAN',  color: '#d8c49a', ox: 63, head: 34, hp: 190, speed: 90,  range: 70,  dmg: 20, kind: 'melee',  frames: { idle: 5, walk: 9, attack: 4, dead: 6 } },
     sarcher:    { label: 'OKÇU',     color: '#c4a060', ox: 66, head: 14, hp: 70,  speed: 120, range: 280, dmg: 10, kind: 'archer', proj: 'sarcher_arrow', handX: 104, handY: 62, frames: { idle: 9, walk: 8, attack: 14, dead: 5 } },
     gorgon1:    { label: 'YILAN',    color: '#66cc66', ox: 50, head: 48, hp: 140, speed: 110, range: 96,  dmg: 16, kind: 'melee',  frames: { idle: 7, walk: 13, attack: 7, dead: 3 } },
     gorgon2:    { label: 'YILAN',    color: '#88dd66', ox: 62, head: 48, hp: 140, speed: 110, range: 96,  dmg: 16, kind: 'melee',  frames: { idle: 7, walk: 13, attack: 7, dead: 3 } },
@@ -484,30 +469,118 @@ const CAST = {
     kunoichi:   { label: 'KUNOICHI', color: '#cc6688', ox: 62, head: 60, hp: 80,  speed: 200, range: 62,  dmg: 15, kind: 'melee',  tall: 248, frames: { idle: 9, walk: 8,  attack: 6,  dead: 5 } },
     vgirl:      { label: 'VAMPİR',   color: '#cc4466', ox: 65, head: 54, hp: 100, speed: 160, range: 64,  dmg: 16, kind: 'melee',  tall: 226, frames: { idle: 5, walk: 6,  attack: 5,  dead: 10 } },
     converted:  { label: 'DÖNMÜŞ',   color: '#aa6688', ox: 64, head: 48, hp: 150, speed: 130, range: 68,  dmg: 18, kind: 'melee',  tall: 208, frames: { idle: 5, walk: 8,  attack: 5,  dead: 8 } },
+    commander:  { label: 'KOMUTAN',  color: '#d8c49a', ox: 63, head: 34, hp: 260, speed: 95,  range: 72,  dmg: 20, kind: 'melee',  miniBoss: true, frames: { idle: 5, walk: 9, attack: 4, dead: 6 } },
     countess:   { label: 'KONTES',   color: '#ff4466', ox: 64, head: 52, hp: 560, speed: 100, range: 78,  dmg: 22, kind: 'melee', boss: true, tall: 250, frames: { idle: 5, walk: 6, attack: 6, dead: 8 } }
 };
 
+// Extra sheets unpacked from hazır assetler.zip (hurt / jump / shield / special).
+const CAST_EXTRA = {
+    fighter: { hurt: 3, jump: 10, shield: 2 },
+    shinobi: { hurt: 2, jump: 12, shield: 4 },
+    commander: { hurt: 2, jump: 7, shield: 2 },
+    sarcher: { hurt: 3, jump: 9 },
+    gorgon1: { hurt: 3, special: 5 },
+    gorgon2: { hurt: 3, special: 5 },
+    gorgon3: { hurt: 3, special: 5 },
+    satyr1: { hurt: 4, special: 10 },
+    satyr2: { hurt: 4, special: 8 },
+    satyr3: { hurt: 4, special: 11 },
+    skelwar: { hurt: 2, shield: 1 },
+    skelspear: { hurt: 3, shield: 2 },
+    skelarch: { hurt: 2, jump: 6 },
+    fire: { hurt: 3, jump: 9, special: 12 },
+    light: { hurt: 3, jump: 8, special: 10 },
+    wanderer: { hurt: 4, jump: 8 },
+    kunoichi: { hurt: 2, jump: 10 },
+    vgirl: { hurt: 2, jump: 6 },
+    converted: { hurt: 1, jump: 7, shield: 2 },
+    countess: { hurt: 2, jump: 6 }
+};
+Object.keys(CAST_EXTRA).forEach((id) => {
+    if (CAST[id]) Object.assign(CAST[id].frames, CAST_EXTRA[id]);
+});
+
 const CASTLE_CROP = { x: 0, y: 115, w: 1023, h: 793 };
+
+// Per-gate live atmosphere: grade, fog, shafts, particles, mid layer, platform skin.
+const ROOM_ATMO = {
+    courtyard: {
+        mid: 'mid_courtyard', plat: 'stone',
+        grade: 0xff9966, gradeA: 0.05,
+        fog: 0x2a1810, fogA: 0.32,
+        shaft: 0xffc080, shaftCount: 2,
+        mote: 0xffb070, moteRate: 90, moteKind: 'ember',
+        haze: 0x1a0c08
+    },
+    garden: {
+        mid: 'mid_garden', plat: 'wood',
+        grade: 0x66aa55, gradeA: 0.05,
+        fog: 0x204028, fogA: 0.28,
+        shaft: 0xc8ff90, shaftCount: 1,
+        mote: 0xe07090, moteRate: 70, moteKind: 'petal',
+        haze: 0x102818
+    },
+    crypt: {
+        mid: 'mid_crypt', plat: 'balcony',
+        grade: 0x6688cc, gradeA: 0.07,
+        fog: 0x101828, fogA: 0.4,
+        shaft: 0x88bbff, shaftCount: 2,
+        mote: 0xaaccff, moteRate: 110, moteKind: 'dust',
+        haze: 0x081018
+    },
+    ridge: {
+        mid: 'mid_ridge', plat: 'stone',
+        grade: 0xff8844, gradeA: 0.06,
+        fog: 0x402010, fogA: 0.28,
+        shaft: 0xffcc88, shaftCount: 2,
+        mote: 0xffd080, moteRate: 80, moteKind: 'ash',
+        haze: 0x281408
+    },
+    tower: {
+        mid: 'mid_tower', plat: 'balcony',
+        grade: 0xaa66dd, gradeA: 0.08,
+        fog: 0x201030, fogA: 0.36,
+        shaft: 0xcc88ff, shaftCount: 2,
+        mote: 0xdd99ff, moteRate: 75, moteKind: 'spark',
+        haze: 0x140820
+    },
+    night: {
+        mid: 'mid_night', plat: 'wood',
+        grade: 0x4466aa, gradeA: 0.07,
+        fog: 0x081020, fogA: 0.38,
+        shaft: 0x8899cc, shaftCount: 1,
+        mote: 0xffe080, moteRate: 100, moteKind: 'firefly',
+        haze: 0x060c18
+    },
+    throne: {
+        mid: 'mid_throne', plat: 'balcony',
+        grade: 0xcc3344, gradeA: 0.08,
+        fog: 0x280808, fogA: 0.4,
+        shaft: 0xff5533, shaftCount: 1,
+        mote: 0xff4422, moteRate: 85, moteKind: 'ash',
+        haze: 0x1a0408
+    }
+};
+
 const ROOMS = {
     courtyard: {
         title: 'Dış Avlu',
-        line: 'Yukarı çıktıkça nöbet artar. Ölenin yerine kenardan biri girer. Kapı, hepsi bitince açılır.',
-        bg: 'bg_castle', crop: CASTLE_CROP, layout: 'castle',
+        line: 'Komutan avluyu tutuyor. Yukarı çık, yedekleri seyrek bırak. Kapı, hepsi bitince açılır.',
+        bg: 'bg_courtyard', layout: 'castle', bgm: 'bgm_courtyard', atmo: 'courtyard',
         spawn: { x: 430, y: 590 },
         portal: { x: 640, y: 470, w: 90, h: 50 },
         next: 'garden',
         foes: [
-            ['commander', 430, 600],
+            ['commander', 640, 600],
             ['fighter', 140, 500], ['shinobi', 1060, 490],
-            ['sarcher', 220, 360], ['sarcher', 1080, 350],
-            ['fighter', 180, 220], ['sarcher', 1040, 215], ['shinobi', 220, 115]
+            ['sarcher', 220, 360], ['sarcher', 1080, 350]
         ],
-        reserves: ['fighter', 'shinobi', 'sarcher', 'sarcher']
+        reserves: ['fighter', 'sarcher']
     },
     garden: {
         title: 'Yılan Bahçesi',
         line: 'Yılanlar zemini tutmuş. Peronlar alçak ve geniş. Aşağı + X ile kayarak kes.',
-        bg: 'bg_castle', crop: CASTLE_CROP, tint: 0x6ea86a, layout: 'garden',
+        bg: 'bg_garden', layout: 'garden', bgm: 'bgm_garden', atmo: 'garden',
         spawn: { x: 640, y: 590 },
         portal: { x: 700, y: 590, w: 80, h: 55 },
         next: 'crypt',
@@ -517,20 +590,20 @@ const ROOMS = {
     crypt: {
         title: 'Kemik Mahzeni',
         line: 'Tavan basık. Okçular alçak galeriden aşağı bakar. Aşağı in, V oku keser.',
-        bg: 'bg_boss', tint: 0x99aacc, layout: 'crypt',
+        bg: 'bg_crypt', layout: 'crypt', bgm: 'bgm_crypt', atmo: 'crypt',
         spawn: { x: 480, y: 580 },
         portal: { x: 1160, y: 592, w: 70, h: 46 },
         next: 'ridge',
         foes: [
             ['skelspear', 520, 590], ['skelwar', 780, 590],
-            ['skelarch', 260, 470], ['skelarch', 1040, 470]
+            ['skelarch', 260, 470], ['skelarch', 1040, 470], ['skelwar', 640, 590]
         ],
-        reserves: ['skelwar', 'skelspear', 'skelarch']
+        reserves: ['skelwar', 'skelarch']
     },
     ridge: {
         title: 'Yabani Sırt',
         line: 'Taş basamaklar sırta çıkar. Satirler yolu keser; zirvedeki boynuz aşağı bakar.',
-        bg: 'bg_castle', crop: CASTLE_CROP, tint: 0xc4a060, layout: 'ridge',
+        bg: 'bg_ridge', layout: 'ridge', bgm: 'bgm_ridge', atmo: 'ridge',
         spawn: { x: 160, y: 590 },
         portal: { x: 640, y: 180, w: 80, h: 50 },
         next: 'tower',
@@ -543,7 +616,7 @@ const ROOMS = {
     tower: {
         title: 'Büyü Kulesi',
         line: 'Ateş sol galeride, şimşek sağda. Gezgin zemini kesiyor. Büyü yukarıdan iner.',
-        bg: 'bg_boss', tint: 0xcc99ee, layout: 'hall',
+        bg: 'bg_tower', layout: 'hall', bgm: 'bgm_tower', atmo: 'tower',
         spawn: { x: 210, y: 580 },
         portal: { x: 1160, y: 592, w: 70, h: 46 },
         next: 'night',
@@ -552,12 +625,12 @@ const ROOMS = {
             ['fire', 237, 428], ['light', 1046, 428],
             ['fire', 416, 268], ['light', 890, 268]
         ],
-        reserves: ['wanderer', 'fire', 'light']
+        reserves: ['wanderer', 'fire', 'light', 'fire']
     },
     night: {
         title: 'Gece İç Avlu',
         line: 'Vampirler zeminde. Kunoichi yan raylarda. Özel barı doldur, C ile zincirle.',
-        bg: 'bg_castle', crop: CASTLE_CROP, tint: 0x6677aa, layout: 'night',
+        bg: 'bg_night', layout: 'night', bgm: 'bgm_night', atmo: 'night',
         spawn: { x: 200, y: 590 },
         portal: { x: 1000, y: 530, w: 80, h: 50 },
         next: 'throne',
@@ -566,16 +639,16 @@ const ROOMS = {
             ['kunoichi', 300, 370], ['kunoichi', 980, 370],
             ['kunoichi', 640, 250], ['vgirl', 500, 440]
         ],
-        reserves: ['kunoichi', 'vgirl', 'converted']
+        reserves: ['kunoichi', 'vgirl', 'converted', 'kunoichi']
     },
     throne: {
         title: 'Taht',
         line: 'Kontes salonun ortasında. Kanı yarıya inince iki yanından biri girer.',
-        bg: 'bg_boss', tint: 0xff8866, layout: 'throne',
+        bg: 'bg_throne', layout: 'throne', bgm: 'bgm_throne', atmo: 'throne',
         spawn: { x: 280, y: 580 },
         final: true,
         foes: [['countess', 680, 590]],
-        reserves: ['vgirl', 'converted']
+        reserves: ['vgirl', 'converted', 'kunoichi']
     }
 };
 
@@ -585,6 +658,20 @@ const ROOMS = {
 function preload() {
     this.load.image('bg_castle', 'background.jpg');
     this.load.image('bg_boss', 'background_boss.png');
+    ['courtyard', 'garden', 'crypt', 'ridge', 'tower', 'night', 'throne'].forEach((r) => {
+        this.load.image('bg_' + r, 'art/bg/bg_' + r + '.png?v=81');
+        this.load.image('mid_' + r, 'art/mid/mid_' + r + '.png?v=81');
+        this.load.audio('bgm_' + r, 'audio/bgm_' + r + '.ogg');
+    });
+    SFX_KEYS.forEach((k) => this.load.audio(k, 'audio/' + k + '.ogg'));
+    const vfx = { frameWidth: 32, frameHeight: 32 };
+    this.load.spritesheet('vfx_spark', 'art/vfx/spark.png?v=80', vfx);
+    this.load.spritesheet('vfx_slash', 'art/vfx/slash.png?v=80', vfx);
+    this.load.spritesheet('vfx_dash', 'art/vfx/dash_dust.png?v=80', vfx);
+    this.load.spritesheet('vfx_hit', 'art/vfx/hit_burst.png?v=80', vfx);
+    this.load.image('ui_gate', 'art/ui/gate.png?v=80');
+    this.load.image('ui_heart', 'art/ui/heart.png?v=80');
+    this.load.image('ui_special', 'art/ui/special.png?v=80');
     const sam = { frameWidth: SAM_W, frameHeight: SAM_H };
     const cell = { frameWidth: 128, frameHeight: 128 };
     this.load.spritesheet('samurai_idle', 'samurai_idle.png?v=45', sam);
@@ -596,7 +683,7 @@ function preload() {
     Object.keys(CAST).forEach((id) => {
         const def = CAST[id];
         Object.keys(def.frames).forEach((anim) => {
-            this.load.spritesheet(id + '_' + anim, 'art/cast/' + id + '_' + anim + '.png?v=50', cell);
+            this.load.spritesheet(id + '_' + anim, 'art/cast/' + id + '_' + anim + '.png?v=80', cell);
         });
         if (def.proj) this.load.image(def.proj, 'art/cast/' + def.proj + '.png?v=50');
     });
@@ -686,6 +773,7 @@ function clearRoom() {
     enemies = [];
     projectiles.forEach(p => { if (p.gfx && p.gfx.scene) p.gfx.destroy(); });
     projectiles = [];
+    clearHeals();
     roomObjects.forEach(obj => { if (obj && obj.scene) obj.destroy(); });
     roomObjects = [];
     if (gameScene && gameScene._roomHits) {
@@ -704,6 +792,12 @@ function clearRoom() {
     reinforceQueue = [];
     reinforceSide = 0;
     activeAttackers = [];
+    if (gameScene) {
+        gameScene._atmo = null;
+        gameScene._atmoFogGfx = null;
+        gameScene._atmoShaftGfx = null;
+        gameScene._atmoMid = null;
+    }
     // Clear player combat locks so a room change never leaves a stuck leap/swing.
     if (player) {
         player._specialLeap = false;
@@ -725,75 +819,80 @@ function clearRoom() {
     lastSpecialTarget = null;
 }
 
+function platSkin() {
+    const a = roomAtmo(ROOMS[currentRoom]);
+    return a.plat || 'stone';
+}
+
 function layCastle(scene) {
+    const p = platSkin();
     // Palace art is cover-fit, so the courtyard sits at the bottom of the frame.
     // Each rise is one jump. Floors overlap so a standing jump reaches the next roof.
     makeVisiblePlatform(scene, 640, 627 + 14, 1500, 28, 'ground');
-    makeVisiblePlatform(scene, 140, 538 + 4, 200, 8, 'stone');
-    makeVisiblePlatform(scene, 220, 398 + 4, 280, 8, 'wood');
-    makeVisiblePlatform(scene, 180, 258 + 4, 220, 8, 'wood');
-    makeVisiblePlatform(scene, 220, 150 + 4, 180, 8, 'stone');
-    makeVisiblePlatform(scene, 640, 500 + 4, 280, 8, 'stone');
-    makeVisiblePlatform(scene, 1060, 530 + 4, 200, 8, 'stone');
-    makeVisiblePlatform(scene, 1080, 390 + 4, 240, 8, 'wood');
-    makeVisiblePlatform(scene, 1040, 250 + 4, 200, 8, 'wood');
+    makeVisiblePlatform(scene, 140, 538 + 4, 200, 8, p);
+    makeVisiblePlatform(scene, 220, 398 + 4, 280, 8, p);
+    makeVisiblePlatform(scene, 180, 258 + 4, 220, 8, p);
+    makeVisiblePlatform(scene, 220, 150 + 4, 180, 8, p);
+    makeVisiblePlatform(scene, 640, 500 + 4, 280, 8, p);
+    makeVisiblePlatform(scene, 1060, 530 + 4, 200, 8, p);
+    makeVisiblePlatform(scene, 1080, 390 + 4, 240, 8, p);
+    makeVisiblePlatform(scene, 1040, 250 + 4, 200, 8, p);
 }
 
 function layGarden(scene) {
-    // Low, wide decks. A running slide crosses the open yard between them.
+    const p = platSkin();
     makeVisiblePlatform(scene, 640, 627 + 14, 1500, 28, 'ground');
-    makeVisiblePlatform(scene, 320, 548 + 4, 420, 8, 'wood');
-    makeVisiblePlatform(scene, 980, 552 + 4, 400, 8, 'wood');
+    makeVisiblePlatform(scene, 320, 548 + 4, 420, 8, p);
+    makeVisiblePlatform(scene, 980, 552 + 4, 400, 8, p);
 }
 
 function layCrypt(scene) {
-    // A squat vault. The galleries are one jump up, and nothing sits in the rafters.
+    const p = platSkin();
     makeVisiblePlatform(scene, 640, 616 + 16, 1500, 32, 'ground');
-    makeVisiblePlatform(scene, 260, 508 + 3, 200, 6, 'balcony');
-    makeVisiblePlatform(scene, 1040, 508 + 3, 200, 6, 'balcony');
+    makeVisiblePlatform(scene, 260, 508 + 3, 200, 6, p);
+    makeVisiblePlatform(scene, 1040, 508 + 3, 200, 6, p);
 }
 
 function layThrone(scene) {
-    // The last room is the open floor. The countess is not perched on a balcony.
     makeVisiblePlatform(scene, 640, 616 + 16, 1500, 32, 'ground');
 }
 
 function layRidge(scene) {
-    // A broken stair across the yard. Each step is one standing jump.
+    const p = platSkin();
     makeVisiblePlatform(scene, 640, 627 + 14, 1500, 28, 'ground');
-    makeVisiblePlatform(scene, 200, 520 + 4, 180, 8, 'stone');
-    makeVisiblePlatform(scene, 420, 430 + 4, 160, 8, 'wood');
-    makeVisiblePlatform(scene, 640, 350 + 4, 180, 8, 'stone');
-    makeVisiblePlatform(scene, 860, 430 + 4, 160, 8, 'wood');
-    makeVisiblePlatform(scene, 1080, 520 + 4, 180, 8, 'stone');
-    makeVisiblePlatform(scene, 640, 210 + 4, 140, 8, 'wood');
+    makeVisiblePlatform(scene, 200, 520 + 4, 180, 8, p);
+    makeVisiblePlatform(scene, 420, 430 + 4, 160, 8, p);
+    makeVisiblePlatform(scene, 640, 350 + 4, 180, 8, p);
+    makeVisiblePlatform(scene, 860, 430 + 4, 160, 8, p);
+    makeVisiblePlatform(scene, 1080, 520 + 4, 180, 8, p);
+    makeVisiblePlatform(scene, 640, 210 + 4, 140, 8, p);
 }
 
 function layNight(scene) {
-    // Low side decks and mid rails. Kunoichi run the rails; vampires hold the floor.
+    const p = platSkin();
     makeVisiblePlatform(scene, 640, 627 + 14, 1500, 28, 'ground');
-    makeVisiblePlatform(scene, 280, 560 + 4, 240, 8, 'wood');
-    makeVisiblePlatform(scene, 1000, 560 + 4, 240, 8, 'wood');
-    makeVisiblePlatform(scene, 500, 470 + 4, 220, 8, 'balcony');
-    makeVisiblePlatform(scene, 300, 400 + 4, 200, 8, 'wood');
-    makeVisiblePlatform(scene, 980, 400 + 4, 200, 8, 'wood');
-    makeVisiblePlatform(scene, 640, 280 + 4, 180, 8, 'stone');
+    makeVisiblePlatform(scene, 280, 560 + 4, 240, 8, p);
+    makeVisiblePlatform(scene, 1000, 560 + 4, 240, 8, p);
+    makeVisiblePlatform(scene, 500, 470 + 4, 220, 8, p);
+    makeVisiblePlatform(scene, 300, 400 + 4, 200, 8, p);
+    makeVisiblePlatform(scene, 980, 400 + 4, 200, 8, p);
+    makeVisiblePlatform(scene, 640, 280 + 4, 180, 8, p);
 }
 
 function layHall(scene) {
-    // Floorboards. Gallery decks and the lintel are one storey up; rafters sit on the high beams.
+    const p = platSkin();
     makeVisiblePlatform(scene, 640, 616 + 16, 1500, 32, 'ground');
-    makeVisiblePlatform(scene, 237, 452 + 3, 130, 6, 'balcony');
-    makeVisiblePlatform(scene, 1046, 452 + 3, 130, 6, 'balcony');
-    makeVisiblePlatform(scene, 604, 454 + 3, 200, 6, 'stone');
-    makeVisiblePlatform(scene, 416, 292 + 3, 120, 6, 'wood');
-    makeVisiblePlatform(scene, 890, 292 + 3, 120, 6, 'wood');
-    // Steps under the galleries, so the climb keeps going up and a body can stand there.
-    makeVisiblePlatform(scene, 180, 540 + 3, 100, 6, 'wood');
-    makeVisiblePlatform(scene, 1120, 530 + 3, 100, 6, 'wood');
+    makeVisiblePlatform(scene, 237, 452 + 3, 130, 6, p);
+    makeVisiblePlatform(scene, 1046, 452 + 3, 130, 6, p);
+    makeVisiblePlatform(scene, 604, 454 + 3, 200, 6, p);
+    makeVisiblePlatform(scene, 416, 292 + 3, 120, 6, p);
+    makeVisiblePlatform(scene, 890, 292 + 3, 120, 6, p);
+    makeVisiblePlatform(scene, 180, 540 + 3, 100, 6, p);
+    makeVisiblePlatform(scene, 1120, 530 + 3, 100, 6, p);
 }
 
 function buildRoom(scene, roomName) {
+    clearRoom();
     const room = ROOMS[roomName] || ROOMS.courtyard;
     currentRoom = roomName;
     platforms = scene.physics.add.staticGroup();
@@ -801,7 +900,8 @@ function buildRoom(scene, roomName) {
 
     const backdrop = addFittedBackdrop(scene, room.bg, room.crop || null);
     if (room.tint && backdrop) backdrop.setTint(room.tint);
-    drawFog(scene);
+    applyRoomAtmosphere(scene, room);
+    if (bgmStarted) setRoomBgm(room.bgm);
     if (room.layout === 'garden') layGarden(scene);
     else if (room.layout === 'crypt') layCrypt(scene);
     else if (room.layout === 'throne') layThrone(scene);
@@ -818,8 +918,10 @@ function buildRoom(scene, roomName) {
     totalEnemiesInRoom = enemies.length + reinforceQueue.length;
 
     if (boss) {
-        bossNameText = scene.add.text(W / 2, 50, 'KONTES', {
-            fontFamily: 'Georgia, serif', fontSize: '13px', color: '#ff4466', fontStyle: 'bold'
+        const title = boss.config.boss ? 'KONTES' : (boss.config.label || 'KOMUTAN');
+        const col = boss.config.boss ? '#ff4466' : '#d8c49a';
+        bossNameText = scene.add.text(W / 2, 50, title, {
+            fontFamily: 'Georgia, serif', fontSize: '13px', color: col, fontStyle: 'bold'
         }).setOrigin(0.5).setDepth(102).setScrollFactor(0);
         bossHpGfx = scene.add.graphics().setDepth(101).setScrollFactor(0);
         bossHpText = scene.add.text(W / 2, 69, '', {
@@ -837,6 +939,7 @@ function buildRoom(scene, roomName) {
     scene.cameras.main.removeBounds();
     scene.cameras.main.setScroll(0, 0);
     if (!storyActive) showRoomCard(room);
+    scheduleRoomHeals(scene, room);
 }
 
 // ============================================================
@@ -845,7 +948,7 @@ function buildRoom(scene, roomName) {
 function spawnFoe(scene, id, x, y) {
     const e = new SheetEnemy(scene, x, y, id);
     enemies.push(e);
-    if (e.config.boss) boss = e;
+    if (e.config.boss || e.config.miniBoss) boss = e;
     scene.physics.add.collider(e.sprite, platforms, null, oneWay);
     scene.physics.add.collider(e.sprite, walls);
     return e;
@@ -864,6 +967,23 @@ function beginCountessPhase(bossEnemy) {
     if (!gameScene) return;
     const fl = gameScene.add.rectangle(W / 2, H / 2, W, H, 0x660011, 0.35).setDepth(180).setScrollFactor(0);
     gameScene.tweens.add({ targets: fl, alpha: 0, duration: 420, onComplete: () => fl.destroy() });
+    playSlamSound();
+}
+
+function beginCommanderPhase(bossEnemy) {
+    bossEnemy.config.speed = Math.round(bossEnemy.config.speed * 1.35);
+    bossEnemy.config.attackCooldown = 780;
+    bossEnemy.config.attackDmg = Math.round(bossEnemy.config.attackDmg * 1.15);
+    if (bossNameText) bossNameText.setText('KOMUTAN · EMİR');
+    let n = 0;
+    while (reinforceQueue.length && n < 2) {
+        sendReinforcement();
+        n++;
+    }
+    if (!gameScene) return;
+    const fl = gameScene.add.rectangle(W / 2, H / 2, W, H, 0x443311, 0.3).setDepth(180).setScrollFactor(0);
+    gameScene.tweens.add({ targets: fl, alpha: 0, duration: 380, onComplete: () => fl.destroy() });
+    playSlamSound();
 }
 
 function sendReinforcement() {
@@ -875,6 +995,183 @@ function sendReinforcement() {
     const e = spawnFoe(gameScene, id, fromLeft ? 90 : 1190, low ? 590 : 600);
     e.entering = fromLeft ? 1 : -1;
     return e;
+}
+
+function clearHeals() {
+    heals.forEach((h) => {
+        if (h.gfx && h.gfx.scene) h.gfx.destroy();
+        if (h.glow && h.glow.scene) h.glow.destroy();
+        if (h.ring && h.ring.scene) h.ring.destroy();
+    });
+    heals = [];
+    healSpawnTimers.forEach((t) => { if (t && t.remove) t.remove(false); });
+    healSpawnTimers = [];
+}
+
+function pickUncertainHealSpot() {
+    if (!platforms) return null;
+    const kids = platforms.getChildren().filter((p) => p && p.body && p.active);
+    if (!kids.length) return null;
+    // Prefer ledges / mid decks; sometimes the ground so it's still "somewhere".
+    const ledges = kids.filter((p) => p.body.width < 900);
+    const pool = (ledges.length && Math.random() < 0.82) ? ledges : kids;
+    const plat = Phaser.Utils.Array.GetRandom(pool);
+    const half = plat.body.width * 0.5;
+    // Bias toward platform edges / odd offsets — not dead center.
+    const edgeBias = Math.random() < 0.65 ? (Math.random() < 0.5 ? -1 : 1) : 0;
+    const jitter = edgeBias
+        ? edgeBias * (half * Phaser.Math.FloatBetween(0.45, 0.88))
+        : Phaser.Math.FloatBetween(-half * 0.55, half * 0.55);
+    const x = Phaser.Math.Clamp(plat.x + jitter, 50, W - 50);
+    const top = plat.y - plat.body.height * 0.5;
+    const y = top - Phaser.Math.Between(16, 28);
+    // Reject if almost on top of another heal.
+    for (let i = 0; i < heals.length; i++) {
+        if (Math.hypot(heals[i].x - x, heals[i].y - y) < 70) return null;
+    }
+    return { x, y };
+}
+
+function spawnHealPickup(scene, opts) {
+    if (!scene || !player || playerDead || storyActive || upgradeActive || transitioning) return null;
+    if (heals.length >= HEAL_MAX_ACTIVE) return null;
+    if (playerHP >= playerMaxHP && !(opts && opts.force)) return null;
+    const spot = pickUncertainHealSpot();
+    if (!spot) return null;
+    const amt = Phaser.Math.Between(HEAL_AMT_MIN, HEAL_AMT_MAX);
+    const glow = scene.add.circle(spot.x, spot.y, 16, 0xff6688, 0.22).setDepth(12)
+        .setBlendMode(Phaser.BlendModes.ADD);
+    const ring = scene.add.circle(spot.x, spot.y, 10, 0xffffff, 0).setDepth(12);
+    ring.setStrokeStyle(1.5, 0xffa0b0, 0.55);
+    let gfx;
+    if (scene.textures.exists('ui_heart')) {
+        gfx = scene.add.image(spot.x, spot.y, 'ui_heart').setDepth(13).setScale(1.7);
+    } else {
+        gfx = scene.add.circle(spot.x, spot.y, 7, 0xff4466, 0.95).setDepth(13);
+    }
+    // Soft blink so the spot stays a little uncertain until you notice it.
+    gfx.setAlpha(0.35);
+    scene.tweens.add({
+        targets: [gfx, glow, ring],
+        alpha: { from: 0.25, to: 1 },
+        duration: 700,
+        yoyo: true,
+        repeat: 2,
+        ease: 'Sine.easeInOut',
+        onComplete: () => {
+            if (gfx.active) gfx.setAlpha(1);
+            if (glow.active) glow.setAlpha(0.28);
+            if (ring.active) ring.setAlpha(1);
+        }
+    });
+    scene.tweens.add({
+        targets: [gfx, glow, ring],
+        y: spot.y - 7,
+        duration: 900,
+        yoyo: true,
+        repeat: -1,
+        ease: 'Sine.easeInOut'
+    });
+    const heal = { x: spot.x, y: spot.y, amt, gfx, glow, ring, life: 22000, bob: 0 };
+    heals.push(heal);
+    return heal;
+}
+
+function scheduleRoomHeals(scene, room) {
+    clearHeals();
+    if (!scene || !room) return;
+    // First drip after the room settles — not always, not always soon.
+    if (Math.random() < 0.7) {
+        healSpawnTimers.push(scene.time.delayedCall(Phaser.Math.Between(2800, 7000), () => {
+            spawnHealPickup(scene);
+        }));
+    }
+    // A later, rarer second chance while the fight is still going.
+    if (Math.random() < 0.45) {
+        healSpawnTimers.push(scene.time.delayedCall(Phaser.Math.Between(12000, 22000), () => {
+            if (playerHP < playerMaxHP * 0.85) spawnHealPickup(scene);
+        }));
+    }
+    // Boss / mini-boss rooms get a slightly kinder mid-fight roll.
+    if (room.final || (room.foes && room.foes.some(([id]) => CAST[id] && (CAST[id].boss || CAST[id].miniBoss)))) {
+        healSpawnTimers.push(scene.time.delayedCall(Phaser.Math.Between(8000, 14000), () => {
+            if (playerHP < playerMaxHP * 0.55) spawnHealPickup(scene, { force: true });
+        }));
+    }
+}
+
+function maybeDropHealOnKill(scene) {
+    if (!scene || playerHP >= playerMaxHP) return;
+    // Uncertain drop — not every kill, more likely when hurt.
+    const hurtFactor = 1 - (playerHP / playerMaxHP);
+    const chance = 0.08 + hurtFactor * 0.22;
+    if (Math.random() < chance) spawnHealPickup(scene);
+}
+
+function collectHeal(heal) {
+    if (!heal || !gameScene) return;
+    const before = playerHP;
+    playerHP = Math.min(playerMaxHP, playerHP + heal.amt);
+    const gained = Math.ceil(playerHP - before);
+    playHealSound();
+    updateHUD();
+    if (heal.gfx && heal.gfx.scene) {
+        gameScene.tweens.add({
+            targets: [heal.gfx, heal.glow, heal.ring].filter(Boolean),
+            y: heal.y - 40, alpha: 0, scale: 1.8, duration: 280,
+            onComplete: () => {
+                if (heal.gfx && heal.gfx.destroy) heal.gfx.destroy();
+                if (heal.glow && heal.glow.destroy) heal.glow.destroy();
+                if (heal.ring && heal.ring.destroy) heal.ring.destroy();
+            }
+        });
+    }
+    const txt = gameScene.add.text(heal.x, heal.y - 20, '+' + gained, {
+        fontFamily: 'monospace', fontSize: '14px', color: '#66ff99', fontStyle: 'bold'
+    }).setOrigin(0.5).setDepth(40);
+    gameScene.tweens.add({ targets: txt, y: txt.y - 28, alpha: 0, duration: 700, onComplete: () => txt.destroy() });
+    for (let i = 0; i < 8; i++) {
+        const a = (i / 8) * Math.PI * 2;
+        const sp = gameScene.add.circle(heal.x, heal.y, 2, 0xff8899, 0.9).setDepth(14);
+        gameScene.tweens.add({
+            targets: sp,
+            x: heal.x + Math.cos(a) * 28,
+            y: heal.y + Math.sin(a) * 28 - 10,
+            alpha: 0, duration: 320, onComplete: () => sp.destroy()
+        });
+    }
+}
+
+function tickHeals(delta) {
+    if (!player || playerDead || storyActive || upgradeActive || transitioning) return;
+    for (let i = heals.length - 1; i >= 0; i--) {
+        const h = heals[i];
+        h.life -= delta;
+        if (h.life <= 0) {
+            if (h.gfx && h.gfx.scene) {
+                gameScene.tweens.add({
+                    targets: [h.gfx, h.glow, h.ring].filter(Boolean),
+                    alpha: 0, duration: 400,
+                    onComplete: () => {
+                        if (h.gfx && h.gfx.destroy) h.gfx.destroy();
+                        if (h.glow && h.glow.destroy) h.glow.destroy();
+                        if (h.ring && h.ring.destroy) h.ring.destroy();
+                    }
+                });
+            }
+            heals.splice(i, 1);
+            continue;
+        }
+        // Fade warn near expiry
+        if (h.life < 4000 && h.gfx) {
+            h.gfx.setAlpha(0.35 + 0.65 * Math.abs(Math.sin(h.life * 0.012)));
+        }
+        const dx = player.x - h.x, dy = (player.y - 20) - h.y;
+        if (dx * dx + dy * dy < HEAL_PICK_R * HEAL_PICK_R) {
+            heals.splice(i, 1);
+            collectHeal(h);
+        }
+    }
 }
 
 function checkAllEnemiesDead() {
@@ -912,6 +1209,11 @@ function openMysticPortal() {
     portalGfx.fillStyle(0x6622cc, 0.15);
     portalGfx.fillCircle(px, py, 28);
     roomObjects.push(portalGfx);
+    if (gameScene.textures.exists('ui_gate')) {
+        const gateIcon = gameScene.add.image(px, py - 2, 'ui_gate').setDepth(7).setScale(1.6).setAlpha(0.95);
+        gameScene.tweens.add({ targets: gateIcon, y: py - 8, duration: 900, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+        roomObjects.push(gateIcon);
+    }
 
     // Pulsing outer ring
     const outerRing = gameScene.add.graphics().setDepth(4);
@@ -1094,6 +1396,13 @@ function selectUpgrade(upg) {
     const flash = gameScene.add.rectangle(W/2, H/2, W, H, 0xffffff, 0.4).setDepth(350).setScrollFactor(0);
     gameScene.tweens.add({ targets: flash, alpha: 0, duration: 300, onComplete: () => flash.destroy() });
 
+    // Pickup spark burst
+    for (let i = 0; i < 14; i++) {
+        const a = (i / 14) * Math.PI * 2;
+        spawnVfxBurst('vfx_spark', W / 2 + Math.cos(a) * 20, H / 2 + Math.sin(a) * 12, Math.cos(a));
+    }
+    gameScene.cameras.main.shake(70, 0.004);
+
     // Show selected text
     const sel = gameScene.add.text(W/2, H/2, upg.name + ' ACQUIRED!', {
         fontFamily: 'Georgia, serif', fontSize: '12px', color: '#ffcc44', fontStyle: 'bold'
@@ -1106,45 +1415,94 @@ function selectUpgrade(upg) {
     gameScene.physics.resume();
 }
 
+function spawnVfxBurst(key, x, y, dir) {
+    if (!gameScene || !gameScene.textures.exists(key)) return;
+    const tex = gameScene.textures.get(key);
+    const frames = Object.keys(tex.frames).filter((k) => k !== '__BASE');
+    const max = Math.max(0, frames.length - 1);
+    const spr = gameScene.add.sprite(x, y, key, 0).setDepth(16).setScale(1.4);
+    if (dir < 0) spr.setFlipX(true);
+    let frame = 0;
+    if (max > 0) {
+        gameScene.time.addEvent({
+            delay: 45, repeat: max,
+            callback: () => {
+                frame++;
+                if (frame <= max) spr.setFrame(frame);
+            }
+        });
+    }
+    gameScene.tweens.add({
+        targets: spr, alpha: 0, x: x + (dir || 0) * 18, duration: 260,
+        onComplete: () => { if (spr.active) spr.destroy(); }
+    });
+}
+
 // ============================================================
 //  INVISIBLE PLATFORMS
 // ============================================================
 // Platform visual styles
 const PLAT_STYLES = {
-    ground:  { fill: 0x1a0e0a, border: 0xc45a3a, highlight: 0xffc2a8, alpha: 0.55 },
-    stone:   { fill: 0x16161e, border: 0x9a8a78, highlight: 0xffe2c4, alpha: 0.82 },
-    wood:    { fill: 0x2a160c, border: 0xc47848, highlight: 0xffd0a0, alpha: 0.88 },
-    balcony: { fill: 0x241010, border: 0xd06060, highlight: 0xffb0b0, alpha: 0.88 }
+    ground:  { fill: 0x1a0e0a, border: 0xc45a3a, highlight: 0xffc2a8, alpha: 0.45 },
+    stone:   { fill: 0x1a1824, border: 0xb0a090, highlight: 0xffe8d0, alpha: 0.72 },
+    wood:    { fill: 0x2a180c, border: 0xd09058, highlight: 0xffd8a8, alpha: 0.78 },
+    balcony: { fill: 0x201018, border: 0xd07080, highlight: 0xffc0c8, alpha: 0.78 }
 };
 
 function makeVisiblePlatform(scene, x, y, w, h, style) {
     const st = PLAT_STYLES[style] || PLAT_STYLES.stone;
-    const key = 'vp_' + x + '_' + y + '_' + w + '_' + currentRoom;
+    const atmo = roomAtmo(ROOMS[currentRoom]);
+    // Draw a thicker board than the physics slab so ledges read as wood/stone beams.
+    const visH = style === 'ground' ? Math.max(h, 22) : Math.max(h, 16);
+    const key = 'vp_' + x + '_' + y + '_' + w + '_' + visH + '_' + currentRoom + '_v2';
     if (!scene.textures.exists(key)) {
         const g = scene.add.graphics();
-        // Main body
-        g.fillStyle(st.fill, st.alpha);
-        g.fillRoundedRect(0, 0, w, h, Math.min(3, h / 2));
-        // Top highlight line
-        g.lineStyle(2, st.highlight, 0.95);
-        g.lineBetween(2, 1, w - 2, 1);
-        // Bottom border
-        g.lineStyle(1, st.border, 0.5);
-        g.strokeRoundedRect(0, 0, w, h, Math.min(3, h / 2));
-        // Wood grain / stone detail
-        if (w > 40) {
-            g.lineStyle(1, st.highlight, 0.15);
-            for (let lx = 20; lx < w; lx += 30) {
-                g.lineBetween(lx, 2, lx + 8, h - 2);
+        // Soft under-shadow
+        g.fillStyle(0x000000, 0.35);
+        g.fillRoundedRect(2, 4, w - 4, visH - 2, 3);
+        // Main beam
+        g.fillStyle(st.fill, Math.min(0.92, st.alpha + 0.12));
+        g.fillRoundedRect(0, 0, w, visH, Math.min(4, visH / 2));
+        // Top lit edge tinted by room shaft color
+        g.lineStyle(2, atmo.shaft, 0.55);
+        g.lineBetween(3, 2, w - 3, 2);
+        g.lineStyle(1, st.highlight, 0.85);
+        g.lineBetween(4, 1, w - 4, 1);
+        // Bottom rim
+        g.lineStyle(1, st.border, 0.7);
+        g.lineBetween(2, visH - 2, w - 2, visH - 2);
+        g.strokeRoundedRect(0, 0, w, visH, Math.min(4, visH / 2));
+        // Plank / brick marks — skip on the full-width ground so it doesn't read as a grid.
+        if (w > 40 && w < 900) {
+            g.lineStyle(1, st.highlight, 0.18);
+            for (let lx = 18; lx < w - 10; lx += 26) {
+                g.lineBetween(lx, 3, lx, visH - 3);
             }
+            if (style === 'wood' || style === 'balcony') {
+                g.lineStyle(1, st.border, 0.25);
+                g.lineBetween(6, Math.floor(visH / 2), w - 6, Math.floor(visH / 2));
+            }
+        } else if (style === 'ground') {
+            g.fillStyle(atmo.haze, 0.35);
+            g.fillRect(0, 0, w, visH);
+            g.lineStyle(1, atmo.shaft, 0.2);
+            g.lineBetween(0, 1, w, 1);
         }
-        g.generateTexture(key, w, h);
+        // End brackets on ledges
+        if (style !== 'ground' && w < 900) {
+            g.fillStyle(st.border, 0.55);
+            g.fillRect(0, visH - 2, 6, 8);
+            g.fillRect(w - 6, visH - 2, 6, 8);
+        }
+        g.generateTexture(key, w, visH + (style !== 'ground' ? 8 : 0));
         g.destroy();
     }
     const plat = platforms.create(x, y, key);
     plat.setDepth(3);
     plat.setData('ledge', style !== 'ground');
-    plat.body.setSize(w, h).setOffset(0, 0);
+    // Keep a thin physical top so jumps / one-way feel crisp.
+    plat.body.setSize(w, Math.max(8, h));
+    plat.body.setOffset(0, 0);
     plat.refreshBody();
 }
 
@@ -1194,17 +1552,155 @@ function addFittedBackdrop(scene, key, crop) {
     return img;
 }
 
-function drawFog(scene) {
-    const fogG = scene.add.graphics().setDepth(1);
-    fogG.fillGradientStyle(0x000000, 0x000000, 0x0a0404, 0x0a0404, 0, 0, 0.25, 0.25);
-    fogG.fillRect(0, 580, W, 140);
-    roomObjects.push(fogG);
-    const v = scene.add.graphics().setDepth(90).setScrollFactor(0);
-    v.fillGradientStyle(0x000000, 0x000000, 0x000000, 0x000000, 0.35, 0.35, 0, 0); v.fillRect(0, 0, W, 80);
-    v.fillGradientStyle(0x000000, 0x000000, 0x000000, 0x000000, 0, 0, 0.4, 0.4); v.fillRect(0, H - 100, W, 100);
-    v.fillGradientStyle(0x000000, 0x000000, 0x000000, 0x000000, 0.18, 0, 0, 0.18); v.fillRect(0, 0, 28, H);
-    v.fillGradientStyle(0x000000, 0x000000, 0x000000, 0x000000, 0, 0.18, 0.18, 0); v.fillRect(W - 28, 0, 28, H);
+function roomAtmo(room) {
+    const key = (room && room.atmo) || currentRoom || 'courtyard';
+    return ROOM_ATMO[key] || ROOM_ATMO.courtyard;
+}
+
+function applyRoomAtmosphere(scene, room) {
+    const atmo = roomAtmo(room);
+    scene._atmo = atmo;
+    scene._atmoMoteT = 0;
+    scene._atmoFogPhase = 0;
+
+    // Mid silhouette / accent layer — sits above backdrop, under platforms/actors.
+    if (atmo.mid && scene.textures.exists(atmo.mid)) {
+        const mid = scene.add.image(W / 2, H / 2, atmo.mid).setDepth(1).setAlpha(0.55);
+        roomObjects.push(mid);
+        scene.tweens.add({
+            targets: mid, x: W / 2 + 10, duration: 9000, yoyo: true, repeat: -1, ease: 'Sine.easeInOut'
+        });
+        scene._atmoMid = mid;
+    }
+
+    // Ground haze
+    const haze = scene.add.graphics().setDepth(2);
+    haze.fillGradientStyle(atmo.haze, atmo.haze, atmo.haze, atmo.haze, 0, 0, atmo.fogA, atmo.fogA);
+    haze.fillRect(0, 520, W, 220);
+    roomObjects.push(haze);
+
+    // Soft color grade wash (normal + additive so dark rooms stay readable)
+    const grade = scene.add.rectangle(W / 2, H / 2, W, H, atmo.grade, atmo.gradeA * 0.55).setDepth(3);
+    roomObjects.push(grade);
+    const glow = scene.add.rectangle(W / 2, H * 0.35, W, H * 0.7, atmo.shaft, 0.04)
+        .setDepth(3).setBlendMode(Phaser.BlendModes.ADD);
+    roomObjects.push(glow);
+
+    // Animated fog bands
+    const fogBand = scene.add.graphics().setDepth(4).setAlpha(0.55);
+    roomObjects.push(fogBand);
+    scene._atmoFogGfx = fogBand;
+    redrawAtmoFog(scene, 0);
+
+    // Light shafts
+    const shafts = scene.add.graphics().setDepth(5).setAlpha(0.35);
+    roomObjects.push(shafts);
+    scene._atmoShaftGfx = shafts;
+    const positions = atmo.shaftCount === 1 ? [W * 0.55] : [W * 0.22, W * 0.78];
+    shafts.fillStyle(atmo.shaft, 0.22);
+    positions.forEach((x) => {
+        shafts.fillTriangle(x - 18, 0, x + 18, 0, x + 70, H * 0.78);
+        shafts.fillTriangle(x - 18, 0, x + 18, 0, x - 70, H * 0.78);
+    });
+    scene.tweens.add({
+        targets: shafts, alpha: 0.18, duration: 2200, yoyo: true, repeat: -1, ease: 'Sine.easeInOut'
+    });
+
+    // Strong cinematic vignette
+    const v = scene.add.graphics().setDepth(91).setScrollFactor(0);
+    v.fillGradientStyle(0x000000, 0x000000, 0x000000, 0x000000, 0.55, 0.55, 0, 0); v.fillRect(0, 0, W, 100);
+    v.fillGradientStyle(0x000000, 0x000000, 0x000000, 0x000000, 0, 0, 0.62, 0.62); v.fillRect(0, H - 130, W, 130);
+    v.fillGradientStyle(0x000000, 0x000000, 0x000000, 0x000000, 0.35, 0, 0, 0.35); v.fillRect(0, 0, 48, H);
+    v.fillGradientStyle(0x000000, 0x000000, 0x000000, 0x000000, 0, 0.35, 0.35, 0); v.fillRect(W - 48, 0, 48, H);
     roomObjects.push(v);
+
+    // Seed a few motes so the room feels alive immediately.
+    for (let i = 0; i < 8; i++) spawnAtmoMote(scene, true);
+}
+
+function redrawAtmoFog(scene, phase) {
+    const g = scene._atmoFogGfx;
+    const atmo = scene._atmo || ROOM_ATMO.courtyard;
+    if (!g) return;
+    g.clear();
+    g.fillStyle(atmo.fog, 0.12);
+    for (let i = 0; i < 4; i++) {
+        const y = 390 + i * 48 + Math.sin(phase * 0.7 + i) * 10;
+        const xOff = Math.sin(phase * 0.35 + i * 1.3) * 40;
+        g.fillEllipse(W * 0.25 + xOff, y, 420, 46);
+        g.fillEllipse(W * 0.72 - xOff, y + 12, 380, 40);
+    }
+}
+
+function spawnAtmoMote(scene, seed) {
+    const atmo = scene._atmo || ROOM_ATMO.courtyard;
+    if (!scene) return;
+    const kind = atmo.moteKind || 'dust';
+    const x = Phaser.Math.Between(20, W - 20);
+    const y = seed ? Phaser.Math.Between(80, H - 80) : Phaser.Math.Between(-20, H * 0.55);
+    let p;
+    if (kind === 'petal') {
+        p = scene.add.ellipse(x, y, Phaser.Math.Between(4, 7), Phaser.Math.Between(2, 4), atmo.mote, 0.75).setDepth(6);
+        scene.tweens.add({
+            targets: p,
+            x: x + Phaser.Math.Between(-80, 80),
+            y: y + Phaser.Math.Between(120, 280),
+            angle: Phaser.Math.Between(-90, 90),
+            alpha: 0, duration: Phaser.Math.Between(2200, 3800),
+            ease: 'Sine.easeIn', onComplete: () => p.destroy()
+        });
+    } else if (kind === 'firefly') {
+        p = scene.add.circle(x, y, Phaser.Math.Between(1, 2), atmo.mote, 0.9).setDepth(6);
+        scene.tweens.add({
+            targets: p,
+            x: x + Phaser.Math.Between(-60, 60),
+            y: y + Phaser.Math.Between(-40, 40),
+            alpha: 0.15, duration: Phaser.Math.Between(900, 1600),
+            yoyo: true, repeat: 3, ease: 'Sine.easeInOut',
+            onComplete: () => p.destroy()
+        });
+    } else if (kind === 'spark') {
+        p = scene.add.rectangle(x, y, 2, 2, atmo.mote, 0.85).setDepth(6);
+        scene.tweens.add({
+            targets: p,
+            y: y - Phaser.Math.Between(40, 120),
+            x: x + Phaser.Math.Between(-30, 30),
+            alpha: 0, duration: Phaser.Math.Between(700, 1400),
+            onComplete: () => p.destroy()
+        });
+    } else if (kind === 'ash' || kind === 'ember') {
+        p = scene.add.circle(x, y, Phaser.Math.Between(1, 3), atmo.mote, Phaser.Math.FloatBetween(0.35, 0.8)).setDepth(6);
+        scene.tweens.add({
+            targets: p,
+            x: x + Phaser.Math.Between(-40, 40),
+            y: y - Phaser.Math.Between(60, 220),
+            alpha: 0, duration: Phaser.Math.Between(1800, 3600),
+            ease: 'Sine.easeOut', onComplete: () => p.destroy()
+        });
+    } else {
+        p = scene.add.circle(x, y, Phaser.Math.Between(1, 2), atmo.mote, 0.35).setDepth(6);
+        scene.tweens.add({
+            targets: p,
+            x: x + Phaser.Math.Between(-50, 50),
+            y: y + Phaser.Math.Between(40, 160),
+            alpha: 0, duration: Phaser.Math.Between(2400, 4200),
+            onComplete: () => p.destroy()
+        });
+    }
+}
+
+function tickRoomAtmosphere(scene, delta) {
+    if (!scene || !scene._atmo || storyActive || upgradeActive || transitioning) return;
+    scene._atmoFogPhase = (scene._atmoFogPhase || 0) + delta * 0.0012;
+    if ((scene._atmoFogTick = (scene._atmoFogTick || 0) - delta) <= 0) {
+        scene._atmoFogTick = 80;
+        redrawAtmoFog(scene, scene._atmoFogPhase);
+    }
+    scene._atmoMoteT = (scene._atmoMoteT || 0) - delta;
+    if (scene._atmoMoteT <= 0) {
+        spawnAtmoMote(scene, false);
+        scene._atmoMoteT = scene._atmo.moteRate || 100;
+    }
 }
 
 // ============================================================
@@ -1229,7 +1725,7 @@ class Enemy {
         this.hpGfx = scene.add.graphics().setDepth(22);
         this.typeLabel = scene.add.text(x, y - 52, config.label || '', {
             fontFamily: 'monospace', fontSize: '7px', color: config.labelColor || '#ff6644'
-        }).setOrigin(0.5).setDepth(23).setAlpha(0.8);
+        }).setOrigin(0.5).setDepth(23).setAlpha(0);
     }
 
     headY() {
@@ -1253,7 +1749,14 @@ class Enemy {
             let color = ratio > 0.6 ? 0x22cc55 : ratio > 0.3 ? 0xcccc22 : 0xcc2222;
             g.fillStyle(color, 0.85); g.fillRoundedRect(bx + 1, by + 1, fillW, bh - 2, 1);
         }
-        this.typeLabel.setPosition(s.x, head - 16);
+        // Labels stay quiet unless the foe is close or hurt — keeps the stage readable.
+        const near = player && Math.hypot(player.x - s.x, player.y - s.y) < 210;
+        const showLab = !!(this.config.boss || this.config.miniBoss || this.hurtTimer > 0 || near);
+        this.typeLabel.setPosition(s.x, head - 16).setAlpha(showLab ? 0.7 : 0);
+        if (!showLab && this.hp >= this.maxHp) {
+            // Hide pristine far HP bars too — only silhouettes at distance.
+            g.clear();
+        }
     }
 
     showFrame(anim, index) {
@@ -1307,6 +1810,8 @@ class Enemy {
         this.sprite.body.setVelocityX(dir * ((opts && opts.fromSpecial) ? 340 : 220));
         this.sprite.body.setVelocityY((opts && opts.fromSpecial) ? -140 : -70);
         playHitSound();
+        if (this.config.anims.hurt) this.playAnim('hurt');
+        spawnVfxBurst('vfx_hit', this.sprite.x, this.headY() + 24, dir);
         // Damage number
         const txt = gameScene.add.text(this.sprite.x, this.headY() + 10, '-' + finalDmg, {
             fontFamily: 'monospace', fontSize: '14px', color: '#ff4444', fontStyle: 'bold'
@@ -1325,6 +1830,9 @@ class Enemy {
         if (this.config.boss && !this._phase2 && this.hp > 0 && this.hp <= this.maxHp * 0.5) {
             this._phase2 = true;
             beginCountessPhase(this);
+        } else if (this.config.miniBoss && !this._phase2 && this.hp > 0 && this.hp <= this.maxHp * 0.5) {
+            this._phase2 = true;
+            beginCommanderPhase(this);
         }
         if (this.hp <= 0) this.die();
     }
@@ -1349,6 +1857,7 @@ class Enemy {
         });
         const kt = gameScene.add.text(s.x, s.y - 40, 'SLAIN', { fontFamily: 'monospace', fontSize: '12px', color: '#ff6644', fontStyle: 'bold' }).setOrigin(0.5).setDepth(30);
         gameScene.tweens.add({ targets: kt, y: kt.y - 30, alpha: 0, duration: 1000, onComplete: () => kt.destroy() });
+        maybeDropHealOnKill(gameScene);
         // Check if all enemies dead -> open portal
         gameScene.time.delayedCall(500, () => checkAllEnemiesDead());
     }
@@ -1387,6 +1896,7 @@ class Enemy {
             this._wantDy = 0;
             this.hurtTimer -= delta;
             s.setTint(this.hurtTimer % 100 > 50 ? 0xffffff : 0xff4444);
+            if (this.config.anims.hurt) this.playAnim('hurt');
             this.drawHP(); this.updateAnim(delta); return;
         }
         s.clearTint();
@@ -1416,6 +1926,10 @@ class Enemy {
             }
         } else {
             this._stuckT = 0;
+        }
+        const grounded = s.body.blocked.down || s.body.touching.down;
+        if (!grounded && this.state !== 'attack' && this.config.anims.jump) {
+            this.playAnim('jump');
         }
         this.updateAnim(delta);
         this.drawHP();
@@ -1540,26 +2054,29 @@ class SheetEnemy extends Enemy {
             anims[name] = {
                 key: id + '_' + name,
                 frames: Array.from({ length: n }, (_, i) => i),
-                fps: name === 'attack' ? 12 : name === 'walk' ? 10 : 6,
-                loop: name === 'idle' || name === 'walk'
+                fps: name === 'attack' || name === 'special' ? 12 : name === 'walk' || name === 'jump' ? 10 : name === 'hurt' ? 8 : 6,
+                loop: name === 'idle' || name === 'walk' || name === 'shield'
             };
         });
         const attackFrames = def.frames.attack || 4;
+        const specialFrames = def.frames.special || 0;
         super(scene, x, y, {
             sheet: id + '_idle',
             label: def.label, labelColor: def.color,
             hp: def.hp, pixelHeight: def.tall || FOE_HEIGHT,
-            attackDmg: def.dmg, knockback: def.boss ? 340 : 220,
+            attackDmg: def.dmg, knockback: def.boss || def.miniBoss ? 340 : 220,
             speed: def.speed,
             chaseRange: def.kind === 'melee' ? 340 : 460,
             attackRange: def.range,
             fleeRange: def.kind === 'melee' ? 0 : 90,
             attackDur: Math.round((attackFrames / 12) * 1000),
-            attackCooldown: def.boss ? 1100 : def.kind === 'melee' ? 900 : 1600,
+            specialDur: specialFrames ? Math.round((specialFrames / 11) * 1000) : 0,
+            attackCooldown: def.boss ? 1100 : def.miniBoss ? 1000 : def.kind === 'melee' ? 900 : 1600,
             dims: dims,
             anims: anims,
             kind: def.kind,
             boss: !!def.boss,
+            miniBoss: !!def.miniBoss,
             proj: def.proj || null,
             bolt: def.bolt || null,
             handX: def.handX || 96,
@@ -1567,20 +2084,23 @@ class SheetEnemy extends Enemy {
         });
         this.shootTimer = 0;
         this._fired = false;
+        this._usingSpecial = false;
     }
 
     drawHP() {
         super.drawHP();
-        if (!this.config.boss || !bossHpGfx) return;
+        if ((!this.config.boss && !this.config.miniBoss) || !bossHpGfx) return;
         bossHpGfx.clear();
         const bx = (W / 2) - 120, by = 58, bw = 240, bh = 10;
         const ratio = Math.max(0, this.hp / this.maxHp);
         const fillW = Math.floor((bw - 4) * ratio);
+        const edge = this.config.boss ? 0xff4466 : 0xd8c49a;
+        const fill = this.config.boss ? 0xcc2244 : 0xc4a060;
         bossHpGfx.fillStyle(0x1a0008, 0.9);
         bossHpGfx.fillRoundedRect(bx, by, bw, bh, 5);
-        bossHpGfx.lineStyle(1, 0xff4466, 0.7);
+        bossHpGfx.lineStyle(1, edge, 0.7);
         bossHpGfx.strokeRoundedRect(bx, by, bw, bh, 5);
-        if (fillW > 0) bossHpGfx.fillStyle(0xcc2244, 0.95).fillRoundedRect(bx + 2, by + 2, fillW, bh - 4, 3);
+        if (fillW > 0) bossHpGfx.fillStyle(fill, 0.95).fillRoundedRect(bx + 2, by + 2, fillW, bh - 4, 3);
         if (bossHpText) bossHpText.setText(Math.ceil(this.hp) + ' / ' + this.maxHp);
     }
 
@@ -1617,11 +2137,18 @@ class SheetEnemy extends Enemy {
         const cfg = this.config;
         if (this.state === 'attack') {
             this.attackTimer -= delta;
-            this.playAnim('attack');
-            const hitAt = cfg.attackDur * 0.45;
-            if (this.attackTimer < hitAt && this.attackTimer > hitAt - delta - 8) this.checkHitPlayer();
+            this.playAnim(this._usingSpecial && cfg.anims.special ? 'special' : 'attack');
+            const dur = this._usingSpecial && cfg.specialDur ? cfg.specialDur : cfg.attackDur;
+            const hitAt = dur * (this._usingSpecial ? 0.38 : 0.45);
+            if (this.attackTimer < hitAt && this.attackTimer > hitAt - delta - 8) {
+                const saved = cfg.attackDmg;
+                if (this._usingSpecial) cfg.attackDmg = Math.round(saved * 1.45);
+                this.checkHitPlayer();
+                cfg.attackDmg = saved;
+            }
             if (this.attackTimer <= 0) {
                 this.state = 'idle';
+                this._usingSpecial = false;
                 this.attackCd = cfg.attackCooldown;
                 this.releaseAttackSlot();
             }
@@ -1629,17 +2156,24 @@ class SheetEnemy extends Enemy {
             return;
         }
         if (dist > cfg.chaseRange * 1.45) {
-            this.state = 'idle'; this.playAnim('idle'); s.body.setVelocityX(0); this.releaseAttackSlot();
-        } else if (dist < cfg.attackRange && this.attackCd <= 0 && (cfg.boss || this.isActiveAttacker())) {
+            this.state = 'idle';
+            this.playAnim(cfg.anims.shield ? 'shield' : 'idle');
+            s.body.setVelocityX(0); this.releaseAttackSlot();
+        } else if (dist < cfg.attackRange && this.attackCd <= 0 && (cfg.boss || cfg.miniBoss || this.isActiveAttacker())) {
+            this._usingSpecial = !!(cfg.anims.special && Math.random() < (cfg.miniBoss || cfg.boss ? 0.38 : 0.26));
             this.state = 'attack';
-            this.attackTimer = cfg.attackDur;
-            this.playAnim('attack');
+            this.attackTimer = this._usingSpecial && cfg.specialDur ? cfg.specialDur : cfg.attackDur;
+            this.playAnim(this._usingSpecial ? 'special' : 'attack');
+            if (this._usingSpecial) playSpecialSound();
             s.body.setVelocityX(0);
-        } else if (dist < cfg.chaseRange && (cfg.boss || this.isActiveAttacker())) {
+        } else if (dist < cfg.chaseRange && (cfg.boss || cfg.miniBoss || this.isActiveAttacker())) {
             this.state = 'chase'; this.playAnim('walk');
             s.body.setVelocityX((dx > 0 ? 1 : -1) * cfg.speed);
         } else {
-            this.state = 'idle'; this.playAnim('idle'); s.body.setVelocityX(0);
+            this.state = 'idle';
+            const holding = activeAttackers.includes(this);
+            this.playAnim(cfg.anims.shield && !holding ? 'shield' : 'idle');
+            s.body.setVelocityX(0);
         }
     }
 
@@ -1669,9 +2203,11 @@ class SheetEnemy extends Enemy {
             this.state = 'idle'; this.playAnim('idle'); s.body.setVelocityX(0); this.releaseAttackSlot();
         } else if (dist < cfg.attackRange && this.attackCd <= 0 && this.isActiveAttacker()) {
             this.state = 'shoot';
-            this.shootTimer = cfg.attackDur;
+            this._usingSpecial = !!(cfg.anims.special && Math.random() < 0.3);
+            this.shootTimer = this._usingSpecial && cfg.specialDur ? cfg.specialDur : cfg.attackDur;
             this._fired = false;
-            this.playAnim('attack');
+            this.playAnim(this._usingSpecial ? 'special' : 'attack');
+            if (this._usingSpecial) playSpecialSound();
             s.body.setVelocityX(0);
             this.attackCd = cfg.attackCooldown;
         } else if (dist < cfg.chaseRange && dist > cfg.attackRange * 0.72 && this.isActiveAttacker()) {
@@ -1749,17 +2285,20 @@ function makeSpellBolts(scene) {
 
 function showRoomCard(room) {
     if (!room || !gameScene) return;
+    const veil = gameScene.add.rectangle(W / 2, 108, 520, 64, 0x08060a, 0.45)
+        .setDepth(179).setScrollFactor(0);
     const title = gameScene.add.text(W / 2, 92, room.title, {
-        fontFamily: 'Georgia, serif', fontSize: '18px', color: '#f3e6cc', fontStyle: 'bold'
+        fontFamily: 'Georgia, serif', fontSize: '16px', color: '#f3e6cc', fontStyle: 'bold'
     }).setOrigin(0.5).setDepth(180).setScrollFactor(0);
-    const line = gameScene.add.text(W / 2, 116, room.line, {
-        fontFamily: 'Georgia, serif', fontSize: '12px', color: '#d8c49a', align: 'center',
-        wordWrap: { width: 760 }
+    const line = gameScene.add.text(W / 2, 112, room.line, {
+        fontFamily: 'Georgia, serif', fontSize: '11px', color: '#cbb896', align: 'center',
+        wordWrap: { width: 480 }
     }).setOrigin(0.5, 0).setDepth(180).setScrollFactor(0);
-    roomObjects.push(title, line);
+    roomObjects.push(veil, title, line);
     gameScene.tweens.add({
-        targets: [title, line], alpha: 0, delay: 3200, duration: 700,
+        targets: [veil, title, line], alpha: 0, delay: 2400, duration: 600,
         onComplete: () => {
+            if (veil.scene) veil.destroy();
             if (title.scene) title.destroy();
             if (line.scene) line.destroy();
         }
@@ -1854,11 +2393,17 @@ function updateProjectiles(delta) {
 // ============================================================
 function createHUD(scene) {
     hpBarGfx = scene.add.graphics().setDepth(101).setScrollFactor(0);
-    hpText = scene.add.text(92, 22, '100', { fontFamily: 'monospace', fontSize: '10px', color: '#ffffff' }).setOrigin(0.5, 0.5).setDepth(102).setScrollFactor(0);
+    if (scene.textures.exists('ui_heart')) {
+        scene.add.image(26, 21, 'ui_heart').setDepth(102).setScrollFactor(0).setScale(1.15);
+    }
+    if (scene.textures.exists('ui_special')) {
+        scene.add.image(26, 38, 'ui_special').setDepth(102).setScrollFactor(0).setScale(1.05);
+    }
+    hpText = scene.add.text(108, 22, '100', { fontFamily: 'monospace', fontSize: '10px', color: '#ffffff' }).setOrigin(0.5, 0.5).setDepth(102).setScrollFactor(0);
     scene.comboText = scene.add.text(W/2, 150, '', { fontFamily: 'monospace', fontSize: '24px', color: '#fff', fontStyle: 'bold' }).setOrigin(0.5).setDepth(100).setAlpha(0).setScrollFactor(0);
     scene.parryText = scene.add.text(W/2, 118, '', { fontFamily: 'monospace', fontSize: '18px', color: '#00ffaa', fontStyle: 'bold' }).setOrigin(0.5).setDepth(100).setAlpha(0).setScrollFactor(0);
     scene.comboCountText = scene.add.text(W - 16, 50, '', { fontFamily: 'monospace', fontSize: '14px', color: '#ff8844', fontStyle: 'bold' }).setOrigin(1, 0).setDepth(100).setScrollFactor(0).setAlpha(0);
-    killCountText = scene.add.text(16, 52, '', { fontFamily: 'monospace', fontSize: '11px', color: '#c4b090' }).setDepth(100).setScrollFactor(0);
+    killCountText = scene.add.text(40, 52, '', { fontFamily: 'monospace', fontSize: '11px', color: '#c4b090' }).setDepth(100).setScrollFactor(0);
     drawPlayerHP();
 }
 
@@ -1969,6 +2514,7 @@ function triggerSpecialLeap() {
     if (specialMeter < SPECIAL_COST) return;
     const target = pickSpecialTarget();
     if (!target || !target.sprite) return;
+    playSpecialSound();
 
     specialMeter = Math.max(0, specialMeter - SPECIAL_COST);
     lastSpecialTarget = target;
@@ -2082,26 +2628,26 @@ function tickSpecialLeap(delta) {
 
 function drawPlayerHP() {
     const g = hpBarGfx; g.clear();
-    const bx = 16, by = 14, bw = 160, bh = 14;
+    const bx = 38, by = 14, bw = 168, bh = 14;
     const ratio = Math.max(0, playerHP / playerMaxHP);
     const fillW = Math.floor((bw - 4) * ratio);
-    g.fillStyle(0x0a0a1a, 0.85); g.fillRoundedRect(bx, by, bw, bh, 7);
-    g.lineStyle(1, 0x334466, 0.5); g.strokeRoundedRect(bx, by, bw, bh, 7);
+    g.fillStyle(0x0a0a1a, 0.9); g.fillRoundedRect(bx, by, bw, bh, 7);
+    g.lineStyle(1, 0x6688aa, 0.55); g.strokeRoundedRect(bx, by, bw, bh, 7);
     if (fillW > 0) {
-        let fc = ratio > 0.6 ? 0x22cc55 : ratio > 0.3 ? 0xcccc22 : 0xcc2222;
-        g.fillStyle(fc, 0.9); g.fillRoundedRect(bx + 2, by + 2, fillW, bh - 4, 5);
-        g.lineStyle(1, 0xffffff, 0.15); g.lineBetween(bx + 6, by + 3, bx + 2 + fillW - 4, by + 3);
+        let fc = ratio > 0.6 ? 0x33dd66 : ratio > 0.3 ? 0xddcc33 : 0xdd3333;
+        g.fillStyle(fc, 0.92); g.fillRoundedRect(bx + 2, by + 2, fillW, bh - 4, 5);
+        g.lineStyle(1, 0xffffff, 0.18); g.lineBetween(bx + 6, by + 3, bx + 2 + fillW - 4, by + 3);
         if (ratio < 0.3) {
             const pulse = 0.2 + Math.sin(Date.now() * 0.006) * 0.15;
             g.lineStyle(2, 0xff2222, pulse); g.strokeRoundedRect(bx - 1, by - 1, bw + 2, bh + 2, 8);
         }
     }
     // Special meter under the life bar. Full → gold pulse, C leaps between foes.
-    const sx = bx, sy = by + bh + 4, sw = bw, sh = 8;
+    const sx = bx, sy = by + bh + 4, sw = bw, sh = 9;
     const sRatio = Math.max(0, specialMeter / SPECIAL_MAX);
     const sFill = Math.floor((sw - 4) * sRatio);
-    g.fillStyle(0x0a0a1a, 0.85); g.fillRoundedRect(sx, sy, sw, sh, 4);
-    g.lineStyle(1, specialMeter >= SPECIAL_COST ? 0xccaa55 : 0x443322, 0.7); g.strokeRoundedRect(sx, sy, sw, sh, 4);
+    g.fillStyle(0x0a0a1a, 0.9); g.fillRoundedRect(sx, sy, sw, sh, 4);
+    g.lineStyle(1, specialMeter >= SPECIAL_COST ? 0xccaa55 : 0x554433, 0.75); g.strokeRoundedRect(sx, sy, sw, sh, 4);
     if (sFill > 0) {
         const canLeap = specialMeter >= SPECIAL_COST;
         const full = specialMeter >= SPECIAL_MAX;
@@ -2280,8 +2826,8 @@ function update(time, delta) {
     if (playerHP <= 0) return;
     if (transitioning || upgradeActive || storyActive) return;
 
-    emberTimer -= delta;
-    if (emberTimer <= 0) { spawnEmber(gameScene); emberTimer = Phaser.Math.Between(100, 250); }
+    tickRoomAtmosphere(gameScene, delta);
+    tickHeals(delta);
     if (playerGlow) playerGlow.setPosition(player.x, player.y - 48);
 
     if (playerHurtTimer > 0) {
@@ -2599,6 +3145,7 @@ function drawBladeTrail(scene, x, y, atk, dir, step) {
 }
 
 function spawnBladeParticles(scene, x, y, dir, step) {
+    spawnVfxBurst(step >= 3 ? 'vfx_spark' : 'vfx_slash', x, y, dir);
     const count = step >= 3 ? 12 : 6;
     for (let i=0;i<count;i++) { const px=x+Phaser.Math.Between(-12,12),py=y+Phaser.Math.Between(-18,18); const c=Math.random()<0.4?0xffffff:(Math.random()<0.5?0xff3322:0xff6644); const s=Phaser.Math.Between(1,4); const p=scene.add.rectangle(px,py,s,s,c,0.8).setDepth(16); scene.tweens.add({targets:p,x:px+dir*Phaser.Math.Between(15,60),y:py+Phaser.Math.Between(-25,20),alpha:0,scaleX:0,scaleY:0,duration:Phaser.Math.Between(120,350),ease:'Power2',onComplete:()=>p.destroy()}); }
 }
@@ -2647,6 +3194,7 @@ function startDash(scene) {
     isDashing=true; canDash=false; dashTime=DASH_DURATION;
     player.body.allowGravity=false; player.body.setVelocityY(0); playAnim('dash');
     player.body.setVelocityX(DASH_SPEED*(facingRight?1:-1)); playDashSound();
+    spawnVfxBurst('vfx_dash', player.x - (facingRight ? 1 : -1) * 18, player.y - 8, facingRight ? 1 : -1);
     const fl=scene.add.circle(player.x,player.y,30,0xffffff,0.5).setDepth(9); scene.tweens.add({targets:fl,scaleX:3,scaleY:3,alpha:0,duration:200,ease:'Power3',onComplete:()=>fl.destroy()});
     scene.cameras.main.shake(100,0.004); spawnDashGhost(scene);
     scene.time.addEvent({delay:25,repeat:Math.floor(DASH_DURATION/25)-1,callback:()=>{if(isDashing)spawnDashGhost(scene);}});
@@ -2690,6 +3238,8 @@ function updateParry(delta) {
 }
 function endParry(){isParrying=false;parryTimer=0;parryWindow=0;if(playerHurtTimer<=0)player.clearTint();if(parryFlash){parryFlash.destroy();parryFlash=null;}}
 function triggerParrySuccess(scene) {
+    playParrySound();
+    spawnVfxBurst('vfx_spark', player.x, player.y - 30, facingRight ? 1 : -1);
     scene.cameras.main.shake(150,0.008); hitstopTimer=120;
     const fl=scene.add.rectangle(player.x,player.y,400,400,0xffffff,0.3).setDepth(50); scene.tweens.add({targets:fl,alpha:0,duration:100,onComplete:()=>fl.destroy()});
     scene.parryText.setText('PERFECT PARRY!').setColor('#00ffaa').setAlpha(1).setScale(1.4);
