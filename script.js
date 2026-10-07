@@ -703,6 +703,26 @@ function clearRoom() {
     boss = null;
     reinforceQueue = [];
     reinforceSide = 0;
+    activeAttackers = [];
+    // Clear player combat locks so a room change never leaves a stuck leap/swing.
+    if (player) {
+        player._specialLeap = false;
+        player._chainTarget = null;
+        player._slide = false;
+        player._atkRef = null;
+        if (player.body) player.body.allowGravity = true;
+        player.setAlpha(1);
+        player.clearTint();
+        player.setScale(SAM_SCALE);
+    }
+    specialLeapT = 0;
+    isAttacking = false;
+    attackTimer = 0;
+    canAttack = true;
+    hitstopTimer = 0;
+    atkBuffer = 0; dashBuffer = 0; specialBuffer = 0; parryBuffer = 0;
+    slideIntentT = 0;
+    lastSpecialTarget = null;
 }
 
 function layCastle(scene) {
@@ -1279,7 +1299,7 @@ class Enemy {
     }
 
     takeDamage(dmg, dir, opts) {
-        if (this.dead) return;
+        if (this.dead || !this.sprite || !this.sprite.body) return;
         const finalDmg = dmg + katanaDmgBonus;
         this.hp -= finalDmg;
         // Short rehit lock so jabs can chain instead of bouncing off a long stun.
@@ -1362,7 +1382,7 @@ class Enemy {
     update(delta) {
         if (this.dead) return;
         const s = this.sprite;
-        if (!s || !s.body) return;
+        if (!s || !s.body || !s.active) return;
         if (this.hurtTimer > 0) {
             this._wantDy = 0;
             this.hurtTimer -= delta;
@@ -1914,7 +1934,7 @@ function spawnChainBurst(x, y, dir) {
 function finishChainStrike() {
     const target = player._chainTarget;
     const dir = player._chainDir || 1;
-    if (!target || target.dead || !target.sprite) return;
+    if (!target || target.dead || !target.sprite || !target.sprite.body) return;
     playSlashSound();
     const hx = player.x + 54 * dir;
     const hy = player.y - 52;
