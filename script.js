@@ -492,11 +492,72 @@ Object.keys(CAST_EXTRA).forEach((id) => {
 });
 
 const CASTLE_CROP = { x: 0, y: 115, w: 1023, h: 793 };
+
+// Per-gate live atmosphere: grade, fog, shafts, particles, mid layer, platform skin.
+const ROOM_ATMO = {
+    courtyard: {
+        mid: 'mid_courtyard', plat: 'stone',
+        grade: 0xff9966, gradeA: 0.05,
+        fog: 0x2a1810, fogA: 0.32,
+        shaft: 0xffc080, shaftCount: 2,
+        mote: 0xffb070, moteRate: 90, moteKind: 'ember',
+        haze: 0x1a0c08
+    },
+    garden: {
+        mid: 'mid_garden', plat: 'wood',
+        grade: 0x66aa55, gradeA: 0.05,
+        fog: 0x204028, fogA: 0.28,
+        shaft: 0xc8ff90, shaftCount: 1,
+        mote: 0xe07090, moteRate: 70, moteKind: 'petal',
+        haze: 0x102818
+    },
+    crypt: {
+        mid: 'mid_crypt', plat: 'balcony',
+        grade: 0x6688cc, gradeA: 0.07,
+        fog: 0x101828, fogA: 0.4,
+        shaft: 0x88bbff, shaftCount: 2,
+        mote: 0xaaccff, moteRate: 110, moteKind: 'dust',
+        haze: 0x081018
+    },
+    ridge: {
+        mid: 'mid_ridge', plat: 'stone',
+        grade: 0xff8844, gradeA: 0.06,
+        fog: 0x402010, fogA: 0.28,
+        shaft: 0xffcc88, shaftCount: 2,
+        mote: 0xffd080, moteRate: 80, moteKind: 'ash',
+        haze: 0x281408
+    },
+    tower: {
+        mid: 'mid_tower', plat: 'balcony',
+        grade: 0xaa66dd, gradeA: 0.08,
+        fog: 0x201030, fogA: 0.36,
+        shaft: 0xcc88ff, shaftCount: 2,
+        mote: 0xdd99ff, moteRate: 75, moteKind: 'spark',
+        haze: 0x140820
+    },
+    night: {
+        mid: 'mid_night', plat: 'wood',
+        grade: 0x4466aa, gradeA: 0.07,
+        fog: 0x081020, fogA: 0.38,
+        shaft: 0x8899cc, shaftCount: 1,
+        mote: 0xffe080, moteRate: 100, moteKind: 'firefly',
+        haze: 0x060c18
+    },
+    throne: {
+        mid: 'mid_throne', plat: 'balcony',
+        grade: 0xcc3344, gradeA: 0.08,
+        fog: 0x280808, fogA: 0.4,
+        shaft: 0xff5533, shaftCount: 1,
+        mote: 0xff4422, moteRate: 85, moteKind: 'ash',
+        haze: 0x1a0408
+    }
+};
+
 const ROOMS = {
     courtyard: {
         title: 'Dış Avlu',
         line: 'Komutan avluyu tutuyor. Yukarı çık, yedekleri seyrek bırak. Kapı, hepsi bitince açılır.',
-        bg: 'bg_courtyard', layout: 'castle', bgm: 'bgm_courtyard',
+        bg: 'bg_courtyard', layout: 'castle', bgm: 'bgm_courtyard', atmo: 'courtyard',
         spawn: { x: 430, y: 590 },
         portal: { x: 640, y: 470, w: 90, h: 50 },
         next: 'garden',
@@ -510,7 +571,7 @@ const ROOMS = {
     garden: {
         title: 'Yılan Bahçesi',
         line: 'Yılanlar zemini tutmuş. Peronlar alçak ve geniş. Aşağı + X ile kayarak kes.',
-        bg: 'bg_garden', layout: 'garden', bgm: 'bgm_garden',
+        bg: 'bg_garden', layout: 'garden', bgm: 'bgm_garden', atmo: 'garden',
         spawn: { x: 640, y: 590 },
         portal: { x: 700, y: 590, w: 80, h: 55 },
         next: 'crypt',
@@ -520,7 +581,7 @@ const ROOMS = {
     crypt: {
         title: 'Kemik Mahzeni',
         line: 'Tavan basık. Okçular alçak galeriden aşağı bakar. Aşağı in, V oku keser.',
-        bg: 'bg_crypt', layout: 'crypt', bgm: 'bgm_crypt',
+        bg: 'bg_crypt', layout: 'crypt', bgm: 'bgm_crypt', atmo: 'crypt',
         spawn: { x: 480, y: 580 },
         portal: { x: 1160, y: 592, w: 70, h: 46 },
         next: 'ridge',
@@ -533,7 +594,7 @@ const ROOMS = {
     ridge: {
         title: 'Yabani Sırt',
         line: 'Taş basamaklar sırta çıkar. Satirler yolu keser; zirvedeki boynuz aşağı bakar.',
-        bg: 'bg_ridge', layout: 'ridge', bgm: 'bgm_ridge',
+        bg: 'bg_ridge', layout: 'ridge', bgm: 'bgm_ridge', atmo: 'ridge',
         spawn: { x: 160, y: 590 },
         portal: { x: 640, y: 180, w: 80, h: 50 },
         next: 'tower',
@@ -546,7 +607,7 @@ const ROOMS = {
     tower: {
         title: 'Büyü Kulesi',
         line: 'Ateş sol galeride, şimşek sağda. Gezgin zemini kesiyor. Büyü yukarıdan iner.',
-        bg: 'bg_tower', layout: 'hall', bgm: 'bgm_tower',
+        bg: 'bg_tower', layout: 'hall', bgm: 'bgm_tower', atmo: 'tower',
         spawn: { x: 210, y: 580 },
         portal: { x: 1160, y: 592, w: 70, h: 46 },
         next: 'night',
@@ -560,7 +621,7 @@ const ROOMS = {
     night: {
         title: 'Gece İç Avlu',
         line: 'Vampirler zeminde. Kunoichi yan raylarda. Özel barı doldur, C ile zincirle.',
-        bg: 'bg_night', layout: 'night', bgm: 'bgm_night',
+        bg: 'bg_night', layout: 'night', bgm: 'bgm_night', atmo: 'night',
         spawn: { x: 200, y: 590 },
         portal: { x: 1000, y: 530, w: 80, h: 50 },
         next: 'throne',
@@ -574,7 +635,7 @@ const ROOMS = {
     throne: {
         title: 'Taht',
         line: 'Kontes salonun ortasında. Kanı yarıya inince iki yanından biri girer.',
-        bg: 'bg_throne', layout: 'throne', bgm: 'bgm_throne',
+        bg: 'bg_throne', layout: 'throne', bgm: 'bgm_throne', atmo: 'throne',
         spawn: { x: 280, y: 580 },
         final: true,
         foes: [['countess', 680, 590]],
@@ -589,7 +650,8 @@ function preload() {
     this.load.image('bg_castle', 'background.jpg');
     this.load.image('bg_boss', 'background_boss.png');
     ['courtyard', 'garden', 'crypt', 'ridge', 'tower', 'night', 'throne'].forEach((r) => {
-        this.load.image('bg_' + r, 'art/bg/bg_' + r + '.png?v=80');
+        this.load.image('bg_' + r, 'art/bg/bg_' + r + '.png?v=81');
+        this.load.image('mid_' + r, 'art/mid/mid_' + r + '.png?v=81');
         this.load.audio('bgm_' + r, 'audio/bgm_' + r + '.ogg');
     });
     SFX_KEYS.forEach((k) => this.load.audio(k, 'audio/' + k + '.ogg'));
@@ -720,6 +782,12 @@ function clearRoom() {
     reinforceQueue = [];
     reinforceSide = 0;
     activeAttackers = [];
+    if (gameScene) {
+        gameScene._atmo = null;
+        gameScene._atmoFogGfx = null;
+        gameScene._atmoShaftGfx = null;
+        gameScene._atmoMid = null;
+    }
     // Clear player combat locks so a room change never leaves a stuck leap/swing.
     if (player) {
         player._specialLeap = false;
@@ -741,75 +809,80 @@ function clearRoom() {
     lastSpecialTarget = null;
 }
 
+function platSkin() {
+    const a = roomAtmo(ROOMS[currentRoom]);
+    return a.plat || 'stone';
+}
+
 function layCastle(scene) {
+    const p = platSkin();
     // Palace art is cover-fit, so the courtyard sits at the bottom of the frame.
     // Each rise is one jump. Floors overlap so a standing jump reaches the next roof.
     makeVisiblePlatform(scene, 640, 627 + 14, 1500, 28, 'ground');
-    makeVisiblePlatform(scene, 140, 538 + 4, 200, 8, 'stone');
-    makeVisiblePlatform(scene, 220, 398 + 4, 280, 8, 'wood');
-    makeVisiblePlatform(scene, 180, 258 + 4, 220, 8, 'wood');
-    makeVisiblePlatform(scene, 220, 150 + 4, 180, 8, 'stone');
-    makeVisiblePlatform(scene, 640, 500 + 4, 280, 8, 'stone');
-    makeVisiblePlatform(scene, 1060, 530 + 4, 200, 8, 'stone');
-    makeVisiblePlatform(scene, 1080, 390 + 4, 240, 8, 'wood');
-    makeVisiblePlatform(scene, 1040, 250 + 4, 200, 8, 'wood');
+    makeVisiblePlatform(scene, 140, 538 + 4, 200, 8, p);
+    makeVisiblePlatform(scene, 220, 398 + 4, 280, 8, p);
+    makeVisiblePlatform(scene, 180, 258 + 4, 220, 8, p);
+    makeVisiblePlatform(scene, 220, 150 + 4, 180, 8, p);
+    makeVisiblePlatform(scene, 640, 500 + 4, 280, 8, p);
+    makeVisiblePlatform(scene, 1060, 530 + 4, 200, 8, p);
+    makeVisiblePlatform(scene, 1080, 390 + 4, 240, 8, p);
+    makeVisiblePlatform(scene, 1040, 250 + 4, 200, 8, p);
 }
 
 function layGarden(scene) {
-    // Low, wide decks. A running slide crosses the open yard between them.
+    const p = platSkin();
     makeVisiblePlatform(scene, 640, 627 + 14, 1500, 28, 'ground');
-    makeVisiblePlatform(scene, 320, 548 + 4, 420, 8, 'wood');
-    makeVisiblePlatform(scene, 980, 552 + 4, 400, 8, 'wood');
+    makeVisiblePlatform(scene, 320, 548 + 4, 420, 8, p);
+    makeVisiblePlatform(scene, 980, 552 + 4, 400, 8, p);
 }
 
 function layCrypt(scene) {
-    // A squat vault. The galleries are one jump up, and nothing sits in the rafters.
+    const p = platSkin();
     makeVisiblePlatform(scene, 640, 616 + 16, 1500, 32, 'ground');
-    makeVisiblePlatform(scene, 260, 508 + 3, 200, 6, 'balcony');
-    makeVisiblePlatform(scene, 1040, 508 + 3, 200, 6, 'balcony');
+    makeVisiblePlatform(scene, 260, 508 + 3, 200, 6, p);
+    makeVisiblePlatform(scene, 1040, 508 + 3, 200, 6, p);
 }
 
 function layThrone(scene) {
-    // The last room is the open floor. The countess is not perched on a balcony.
     makeVisiblePlatform(scene, 640, 616 + 16, 1500, 32, 'ground');
 }
 
 function layRidge(scene) {
-    // A broken stair across the yard. Each step is one standing jump.
+    const p = platSkin();
     makeVisiblePlatform(scene, 640, 627 + 14, 1500, 28, 'ground');
-    makeVisiblePlatform(scene, 200, 520 + 4, 180, 8, 'stone');
-    makeVisiblePlatform(scene, 420, 430 + 4, 160, 8, 'wood');
-    makeVisiblePlatform(scene, 640, 350 + 4, 180, 8, 'stone');
-    makeVisiblePlatform(scene, 860, 430 + 4, 160, 8, 'wood');
-    makeVisiblePlatform(scene, 1080, 520 + 4, 180, 8, 'stone');
-    makeVisiblePlatform(scene, 640, 210 + 4, 140, 8, 'wood');
+    makeVisiblePlatform(scene, 200, 520 + 4, 180, 8, p);
+    makeVisiblePlatform(scene, 420, 430 + 4, 160, 8, p);
+    makeVisiblePlatform(scene, 640, 350 + 4, 180, 8, p);
+    makeVisiblePlatform(scene, 860, 430 + 4, 160, 8, p);
+    makeVisiblePlatform(scene, 1080, 520 + 4, 180, 8, p);
+    makeVisiblePlatform(scene, 640, 210 + 4, 140, 8, p);
 }
 
 function layNight(scene) {
-    // Low side decks and mid rails. Kunoichi run the rails; vampires hold the floor.
+    const p = platSkin();
     makeVisiblePlatform(scene, 640, 627 + 14, 1500, 28, 'ground');
-    makeVisiblePlatform(scene, 280, 560 + 4, 240, 8, 'wood');
-    makeVisiblePlatform(scene, 1000, 560 + 4, 240, 8, 'wood');
-    makeVisiblePlatform(scene, 500, 470 + 4, 220, 8, 'balcony');
-    makeVisiblePlatform(scene, 300, 400 + 4, 200, 8, 'wood');
-    makeVisiblePlatform(scene, 980, 400 + 4, 200, 8, 'wood');
-    makeVisiblePlatform(scene, 640, 280 + 4, 180, 8, 'stone');
+    makeVisiblePlatform(scene, 280, 560 + 4, 240, 8, p);
+    makeVisiblePlatform(scene, 1000, 560 + 4, 240, 8, p);
+    makeVisiblePlatform(scene, 500, 470 + 4, 220, 8, p);
+    makeVisiblePlatform(scene, 300, 400 + 4, 200, 8, p);
+    makeVisiblePlatform(scene, 980, 400 + 4, 200, 8, p);
+    makeVisiblePlatform(scene, 640, 280 + 4, 180, 8, p);
 }
 
 function layHall(scene) {
-    // Floorboards. Gallery decks and the lintel are one storey up; rafters sit on the high beams.
+    const p = platSkin();
     makeVisiblePlatform(scene, 640, 616 + 16, 1500, 32, 'ground');
-    makeVisiblePlatform(scene, 237, 452 + 3, 130, 6, 'balcony');
-    makeVisiblePlatform(scene, 1046, 452 + 3, 130, 6, 'balcony');
-    makeVisiblePlatform(scene, 604, 454 + 3, 200, 6, 'stone');
-    makeVisiblePlatform(scene, 416, 292 + 3, 120, 6, 'wood');
-    makeVisiblePlatform(scene, 890, 292 + 3, 120, 6, 'wood');
-    // Steps under the galleries, so the climb keeps going up and a body can stand there.
-    makeVisiblePlatform(scene, 180, 540 + 3, 100, 6, 'wood');
-    makeVisiblePlatform(scene, 1120, 530 + 3, 100, 6, 'wood');
+    makeVisiblePlatform(scene, 237, 452 + 3, 130, 6, p);
+    makeVisiblePlatform(scene, 1046, 452 + 3, 130, 6, p);
+    makeVisiblePlatform(scene, 604, 454 + 3, 200, 6, p);
+    makeVisiblePlatform(scene, 416, 292 + 3, 120, 6, p);
+    makeVisiblePlatform(scene, 890, 292 + 3, 120, 6, p);
+    makeVisiblePlatform(scene, 180, 540 + 3, 100, 6, p);
+    makeVisiblePlatform(scene, 1120, 530 + 3, 100, 6, p);
 }
 
 function buildRoom(scene, roomName) {
+    clearRoom();
     const room = ROOMS[roomName] || ROOMS.courtyard;
     currentRoom = roomName;
     platforms = scene.physics.add.staticGroup();
@@ -817,7 +890,7 @@ function buildRoom(scene, roomName) {
 
     const backdrop = addFittedBackdrop(scene, room.bg, room.crop || null);
     if (room.tint && backdrop) backdrop.setTint(room.tint);
-    drawFog(scene);
+    applyRoomAtmosphere(scene, room);
     if (bgmStarted) setRoomBgm(room.bgm);
     if (room.layout === 'garden') layGarden(scene);
     else if (room.layout === 'crypt') layCrypt(scene);
@@ -1182,40 +1255,66 @@ function spawnVfxBurst(key, x, y, dir) {
 // ============================================================
 // Platform visual styles
 const PLAT_STYLES = {
-    ground:  { fill: 0x1a0e0a, border: 0xc45a3a, highlight: 0xffc2a8, alpha: 0.55 },
-    stone:   { fill: 0x16161e, border: 0x9a8a78, highlight: 0xffe2c4, alpha: 0.82 },
-    wood:    { fill: 0x2a160c, border: 0xc47848, highlight: 0xffd0a0, alpha: 0.88 },
-    balcony: { fill: 0x241010, border: 0xd06060, highlight: 0xffb0b0, alpha: 0.88 }
+    ground:  { fill: 0x1a0e0a, border: 0xc45a3a, highlight: 0xffc2a8, alpha: 0.45 },
+    stone:   { fill: 0x1a1824, border: 0xb0a090, highlight: 0xffe8d0, alpha: 0.72 },
+    wood:    { fill: 0x2a180c, border: 0xd09058, highlight: 0xffd8a8, alpha: 0.78 },
+    balcony: { fill: 0x201018, border: 0xd07080, highlight: 0xffc0c8, alpha: 0.78 }
 };
 
 function makeVisiblePlatform(scene, x, y, w, h, style) {
     const st = PLAT_STYLES[style] || PLAT_STYLES.stone;
-    const key = 'vp_' + x + '_' + y + '_' + w + '_' + currentRoom;
+    const atmo = roomAtmo(ROOMS[currentRoom]);
+    // Draw a thicker board than the physics slab so ledges read as wood/stone beams.
+    const visH = style === 'ground' ? Math.max(h, 22) : Math.max(h, 16);
+    const key = 'vp_' + x + '_' + y + '_' + w + '_' + visH + '_' + currentRoom + '_v2';
     if (!scene.textures.exists(key)) {
         const g = scene.add.graphics();
-        // Main body
-        g.fillStyle(st.fill, st.alpha);
-        g.fillRoundedRect(0, 0, w, h, Math.min(3, h / 2));
-        // Top highlight line
-        g.lineStyle(2, st.highlight, 0.95);
-        g.lineBetween(2, 1, w - 2, 1);
-        // Bottom border
-        g.lineStyle(1, st.border, 0.5);
-        g.strokeRoundedRect(0, 0, w, h, Math.min(3, h / 2));
-        // Wood grain / stone detail
-        if (w > 40) {
-            g.lineStyle(1, st.highlight, 0.15);
-            for (let lx = 20; lx < w; lx += 30) {
-                g.lineBetween(lx, 2, lx + 8, h - 2);
+        // Soft under-shadow
+        g.fillStyle(0x000000, 0.35);
+        g.fillRoundedRect(2, 4, w - 4, visH - 2, 3);
+        // Main beam
+        g.fillStyle(st.fill, Math.min(0.92, st.alpha + 0.12));
+        g.fillRoundedRect(0, 0, w, visH, Math.min(4, visH / 2));
+        // Top lit edge tinted by room shaft color
+        g.lineStyle(2, atmo.shaft, 0.55);
+        g.lineBetween(3, 2, w - 3, 2);
+        g.lineStyle(1, st.highlight, 0.85);
+        g.lineBetween(4, 1, w - 4, 1);
+        // Bottom rim
+        g.lineStyle(1, st.border, 0.7);
+        g.lineBetween(2, visH - 2, w - 2, visH - 2);
+        g.strokeRoundedRect(0, 0, w, visH, Math.min(4, visH / 2));
+        // Plank / brick marks — skip on the full-width ground so it doesn't read as a grid.
+        if (w > 40 && w < 900) {
+            g.lineStyle(1, st.highlight, 0.18);
+            for (let lx = 18; lx < w - 10; lx += 26) {
+                g.lineBetween(lx, 3, lx, visH - 3);
             }
+            if (style === 'wood' || style === 'balcony') {
+                g.lineStyle(1, st.border, 0.25);
+                g.lineBetween(6, Math.floor(visH / 2), w - 6, Math.floor(visH / 2));
+            }
+        } else if (style === 'ground') {
+            g.fillStyle(atmo.haze, 0.35);
+            g.fillRect(0, 0, w, visH);
+            g.lineStyle(1, atmo.shaft, 0.2);
+            g.lineBetween(0, 1, w, 1);
         }
-        g.generateTexture(key, w, h);
+        // End brackets on ledges
+        if (style !== 'ground' && w < 900) {
+            g.fillStyle(st.border, 0.55);
+            g.fillRect(0, visH - 2, 6, 8);
+            g.fillRect(w - 6, visH - 2, 6, 8);
+        }
+        g.generateTexture(key, w, visH + (style !== 'ground' ? 8 : 0));
         g.destroy();
     }
     const plat = platforms.create(x, y, key);
     plat.setDepth(3);
     plat.setData('ledge', style !== 'ground');
-    plat.body.setSize(w, h).setOffset(0, 0);
+    // Keep a thin physical top so jumps / one-way feel crisp.
+    plat.body.setSize(w, Math.max(8, h));
+    plat.body.setOffset(0, 0);
     plat.refreshBody();
 }
 
@@ -1265,17 +1364,155 @@ function addFittedBackdrop(scene, key, crop) {
     return img;
 }
 
-function drawFog(scene) {
-    const fogG = scene.add.graphics().setDepth(1);
-    fogG.fillGradientStyle(0x000000, 0x000000, 0x0a0404, 0x0a0404, 0, 0, 0.25, 0.25);
-    fogG.fillRect(0, 580, W, 140);
-    roomObjects.push(fogG);
-    const v = scene.add.graphics().setDepth(90).setScrollFactor(0);
-    v.fillGradientStyle(0x000000, 0x000000, 0x000000, 0x000000, 0.35, 0.35, 0, 0); v.fillRect(0, 0, W, 80);
-    v.fillGradientStyle(0x000000, 0x000000, 0x000000, 0x000000, 0, 0, 0.4, 0.4); v.fillRect(0, H - 100, W, 100);
-    v.fillGradientStyle(0x000000, 0x000000, 0x000000, 0x000000, 0.18, 0, 0, 0.18); v.fillRect(0, 0, 28, H);
-    v.fillGradientStyle(0x000000, 0x000000, 0x000000, 0x000000, 0, 0.18, 0.18, 0); v.fillRect(W - 28, 0, 28, H);
+function roomAtmo(room) {
+    const key = (room && room.atmo) || currentRoom || 'courtyard';
+    return ROOM_ATMO[key] || ROOM_ATMO.courtyard;
+}
+
+function applyRoomAtmosphere(scene, room) {
+    const atmo = roomAtmo(room);
+    scene._atmo = atmo;
+    scene._atmoMoteT = 0;
+    scene._atmoFogPhase = 0;
+
+    // Mid silhouette / accent layer — sits above backdrop, under platforms/actors.
+    if (atmo.mid && scene.textures.exists(atmo.mid)) {
+        const mid = scene.add.image(W / 2, H / 2, atmo.mid).setDepth(1).setAlpha(0.55);
+        roomObjects.push(mid);
+        scene.tweens.add({
+            targets: mid, x: W / 2 + 10, duration: 9000, yoyo: true, repeat: -1, ease: 'Sine.easeInOut'
+        });
+        scene._atmoMid = mid;
+    }
+
+    // Ground haze
+    const haze = scene.add.graphics().setDepth(2);
+    haze.fillGradientStyle(atmo.haze, atmo.haze, atmo.haze, atmo.haze, 0, 0, atmo.fogA, atmo.fogA);
+    haze.fillRect(0, 520, W, 220);
+    roomObjects.push(haze);
+
+    // Soft color grade wash (normal + additive so dark rooms stay readable)
+    const grade = scene.add.rectangle(W / 2, H / 2, W, H, atmo.grade, atmo.gradeA * 0.55).setDepth(3);
+    roomObjects.push(grade);
+    const glow = scene.add.rectangle(W / 2, H * 0.35, W, H * 0.7, atmo.shaft, 0.04)
+        .setDepth(3).setBlendMode(Phaser.BlendModes.ADD);
+    roomObjects.push(glow);
+
+    // Animated fog bands
+    const fogBand = scene.add.graphics().setDepth(4).setAlpha(0.55);
+    roomObjects.push(fogBand);
+    scene._atmoFogGfx = fogBand;
+    redrawAtmoFog(scene, 0);
+
+    // Light shafts
+    const shafts = scene.add.graphics().setDepth(5).setAlpha(0.35);
+    roomObjects.push(shafts);
+    scene._atmoShaftGfx = shafts;
+    const positions = atmo.shaftCount === 1 ? [W * 0.55] : [W * 0.22, W * 0.78];
+    shafts.fillStyle(atmo.shaft, 0.22);
+    positions.forEach((x) => {
+        shafts.fillTriangle(x - 18, 0, x + 18, 0, x + 70, H * 0.78);
+        shafts.fillTriangle(x - 18, 0, x + 18, 0, x - 70, H * 0.78);
+    });
+    scene.tweens.add({
+        targets: shafts, alpha: 0.18, duration: 2200, yoyo: true, repeat: -1, ease: 'Sine.easeInOut'
+    });
+
+    // Strong cinematic vignette
+    const v = scene.add.graphics().setDepth(91).setScrollFactor(0);
+    v.fillGradientStyle(0x000000, 0x000000, 0x000000, 0x000000, 0.55, 0.55, 0, 0); v.fillRect(0, 0, W, 100);
+    v.fillGradientStyle(0x000000, 0x000000, 0x000000, 0x000000, 0, 0, 0.62, 0.62); v.fillRect(0, H - 130, W, 130);
+    v.fillGradientStyle(0x000000, 0x000000, 0x000000, 0x000000, 0.35, 0, 0, 0.35); v.fillRect(0, 0, 48, H);
+    v.fillGradientStyle(0x000000, 0x000000, 0x000000, 0x000000, 0, 0.35, 0.35, 0); v.fillRect(W - 48, 0, 48, H);
     roomObjects.push(v);
+
+    // Seed a few motes so the room feels alive immediately.
+    for (let i = 0; i < 8; i++) spawnAtmoMote(scene, true);
+}
+
+function redrawAtmoFog(scene, phase) {
+    const g = scene._atmoFogGfx;
+    const atmo = scene._atmo || ROOM_ATMO.courtyard;
+    if (!g) return;
+    g.clear();
+    g.fillStyle(atmo.fog, 0.12);
+    for (let i = 0; i < 4; i++) {
+        const y = 390 + i * 48 + Math.sin(phase * 0.7 + i) * 10;
+        const xOff = Math.sin(phase * 0.35 + i * 1.3) * 40;
+        g.fillEllipse(W * 0.25 + xOff, y, 420, 46);
+        g.fillEllipse(W * 0.72 - xOff, y + 12, 380, 40);
+    }
+}
+
+function spawnAtmoMote(scene, seed) {
+    const atmo = scene._atmo || ROOM_ATMO.courtyard;
+    if (!scene) return;
+    const kind = atmo.moteKind || 'dust';
+    const x = Phaser.Math.Between(20, W - 20);
+    const y = seed ? Phaser.Math.Between(80, H - 80) : Phaser.Math.Between(-20, H * 0.55);
+    let p;
+    if (kind === 'petal') {
+        p = scene.add.ellipse(x, y, Phaser.Math.Between(4, 7), Phaser.Math.Between(2, 4), atmo.mote, 0.75).setDepth(6);
+        scene.tweens.add({
+            targets: p,
+            x: x + Phaser.Math.Between(-80, 80),
+            y: y + Phaser.Math.Between(120, 280),
+            angle: Phaser.Math.Between(-90, 90),
+            alpha: 0, duration: Phaser.Math.Between(2200, 3800),
+            ease: 'Sine.easeIn', onComplete: () => p.destroy()
+        });
+    } else if (kind === 'firefly') {
+        p = scene.add.circle(x, y, Phaser.Math.Between(1, 2), atmo.mote, 0.9).setDepth(6);
+        scene.tweens.add({
+            targets: p,
+            x: x + Phaser.Math.Between(-60, 60),
+            y: y + Phaser.Math.Between(-40, 40),
+            alpha: 0.15, duration: Phaser.Math.Between(900, 1600),
+            yoyo: true, repeat: 3, ease: 'Sine.easeInOut',
+            onComplete: () => p.destroy()
+        });
+    } else if (kind === 'spark') {
+        p = scene.add.rectangle(x, y, 2, 2, atmo.mote, 0.85).setDepth(6);
+        scene.tweens.add({
+            targets: p,
+            y: y - Phaser.Math.Between(40, 120),
+            x: x + Phaser.Math.Between(-30, 30),
+            alpha: 0, duration: Phaser.Math.Between(700, 1400),
+            onComplete: () => p.destroy()
+        });
+    } else if (kind === 'ash' || kind === 'ember') {
+        p = scene.add.circle(x, y, Phaser.Math.Between(1, 3), atmo.mote, Phaser.Math.FloatBetween(0.35, 0.8)).setDepth(6);
+        scene.tweens.add({
+            targets: p,
+            x: x + Phaser.Math.Between(-40, 40),
+            y: y - Phaser.Math.Between(60, 220),
+            alpha: 0, duration: Phaser.Math.Between(1800, 3600),
+            ease: 'Sine.easeOut', onComplete: () => p.destroy()
+        });
+    } else {
+        p = scene.add.circle(x, y, Phaser.Math.Between(1, 2), atmo.mote, 0.35).setDepth(6);
+        scene.tweens.add({
+            targets: p,
+            x: x + Phaser.Math.Between(-50, 50),
+            y: y + Phaser.Math.Between(40, 160),
+            alpha: 0, duration: Phaser.Math.Between(2400, 4200),
+            onComplete: () => p.destroy()
+        });
+    }
+}
+
+function tickRoomAtmosphere(scene, delta) {
+    if (!scene || !scene._atmo || storyActive || upgradeActive || transitioning) return;
+    scene._atmoFogPhase = (scene._atmoFogPhase || 0) + delta * 0.0012;
+    if ((scene._atmoFogTick = (scene._atmoFogTick || 0) - delta) <= 0) {
+        scene._atmoFogTick = 80;
+        redrawAtmoFog(scene, scene._atmoFogPhase);
+    }
+    scene._atmoMoteT = (scene._atmoMoteT || 0) - delta;
+    if (scene._atmoMoteT <= 0) {
+        spawnAtmoMote(scene, false);
+        scene._atmoMoteT = scene._atmo.moteRate || 100;
+    }
 }
 
 // ============================================================
@@ -1300,7 +1537,7 @@ class Enemy {
         this.hpGfx = scene.add.graphics().setDepth(22);
         this.typeLabel = scene.add.text(x, y - 52, config.label || '', {
             fontFamily: 'monospace', fontSize: '7px', color: config.labelColor || '#ff6644'
-        }).setOrigin(0.5).setDepth(23).setAlpha(0.8);
+        }).setOrigin(0.5).setDepth(23).setAlpha(0);
     }
 
     headY() {
@@ -1324,7 +1561,14 @@ class Enemy {
             let color = ratio > 0.6 ? 0x22cc55 : ratio > 0.3 ? 0xcccc22 : 0xcc2222;
             g.fillStyle(color, 0.85); g.fillRoundedRect(bx + 1, by + 1, fillW, bh - 2, 1);
         }
-        this.typeLabel.setPosition(s.x, head - 16);
+        // Labels stay quiet unless the foe is close or hurt — keeps the stage readable.
+        const near = player && Math.hypot(player.x - s.x, player.y - s.y) < 210;
+        const showLab = !!(this.config.boss || this.config.miniBoss || this.hurtTimer > 0 || near);
+        this.typeLabel.setPosition(s.x, head - 16).setAlpha(showLab ? 0.7 : 0);
+        if (!showLab && this.hp >= this.maxHp) {
+            // Hide pristine far HP bars too — only silhouettes at distance.
+            g.clear();
+        }
     }
 
     showFrame(anim, index) {
@@ -1852,17 +2096,20 @@ function makeSpellBolts(scene) {
 
 function showRoomCard(room) {
     if (!room || !gameScene) return;
+    const veil = gameScene.add.rectangle(W / 2, 108, 520, 64, 0x08060a, 0.45)
+        .setDepth(179).setScrollFactor(0);
     const title = gameScene.add.text(W / 2, 92, room.title, {
-        fontFamily: 'Georgia, serif', fontSize: '18px', color: '#f3e6cc', fontStyle: 'bold'
+        fontFamily: 'Georgia, serif', fontSize: '16px', color: '#f3e6cc', fontStyle: 'bold'
     }).setOrigin(0.5).setDepth(180).setScrollFactor(0);
-    const line = gameScene.add.text(W / 2, 116, room.line, {
-        fontFamily: 'Georgia, serif', fontSize: '12px', color: '#d8c49a', align: 'center',
-        wordWrap: { width: 760 }
+    const line = gameScene.add.text(W / 2, 112, room.line, {
+        fontFamily: 'Georgia, serif', fontSize: '11px', color: '#cbb896', align: 'center',
+        wordWrap: { width: 480 }
     }).setOrigin(0.5, 0).setDepth(180).setScrollFactor(0);
-    roomObjects.push(title, line);
+    roomObjects.push(veil, title, line);
     gameScene.tweens.add({
-        targets: [title, line], alpha: 0, delay: 3200, duration: 700,
+        targets: [veil, title, line], alpha: 0, delay: 2400, duration: 600,
         onComplete: () => {
+            if (veil.scene) veil.destroy();
             if (title.scene) title.destroy();
             if (line.scene) line.destroy();
         }
@@ -2390,8 +2637,7 @@ function update(time, delta) {
     if (playerHP <= 0) return;
     if (transitioning || upgradeActive || storyActive) return;
 
-    emberTimer -= delta;
-    if (emberTimer <= 0) { spawnEmber(gameScene); emberTimer = Phaser.Math.Between(100, 250); }
+    tickRoomAtmosphere(gameScene, delta);
     if (playerGlow) playerGlow.setPosition(player.x, player.y - 48);
 
     if (playerHurtTimer > 0) {
